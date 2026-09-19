@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Any, Callable
 
@@ -232,7 +233,7 @@ def _capture_home_identity() -> str | None:
 
 def make_system_one_handler(
     settings: Mapping[str, Any], *, home_identity: str | None = None
-) -> Callable[..., dict[str, Any]]:
+) -> Callable[..., str]:
     """Create a registration-lifetime handler without retaining host context."""
 
     detached_settings = {key: value for key, value in settings.items() if type(key) is str}
@@ -243,17 +244,19 @@ def make_system_one_handler(
         require_home_identity=True,
     )
 
-    def handler(arguments: Mapping[str, Any] | None = None, **kwargs: Any) -> dict[str, Any]:
+    def handler(arguments: Mapping[str, Any] | None = None, **kwargs: Any) -> str:
         if set(kwargs) & _INTERNAL_KWARGS:
-            return _error_result(ClientError("invalid_input"))
-        return system_one(
-            arguments,
-            _runtime=runtime,
-            _settings=detached_settings,
-            _home_identity=captured_home,
-            _require_home_identity=True,
-            **kwargs,
-        )
+            payload = _error_result(ClientError("invalid_input"))
+        else:
+            payload = system_one(
+                arguments,
+                _runtime=runtime,
+                _settings=detached_settings,
+                _home_identity=captured_home,
+                _require_home_identity=True,
+                **kwargs,
+            )
+        return json.dumps(payload, ensure_ascii=True, sort_keys=True)
 
     handler._typesafe_runtime = runtime  # type: ignore[attr-defined]
     return handler
