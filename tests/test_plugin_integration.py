@@ -17,6 +17,7 @@ from conftest import ROOT
 _REAL_LOOKUP_SCRIPT = r'''
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -26,6 +27,8 @@ plugin_dir = Path(sys.argv[2]).resolve()
 
 with tempfile.TemporaryDirectory(prefix="typesafe-qualified-skill-") as temp:
     root = Path(temp).resolve()
+    plugin_copy = root / "plugins" / "typesafe"
+    shutil.copytree(plugin_dir, plugin_copy)
     for name in tuple(os.environ):
         if name.startswith("HERMES_") or name in {"PYTHONPATH", "TYPESAFE_API_KEY"}:
             os.environ.pop(name, None)
@@ -37,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix="typesafe-qualified-skill-") as temp:
     from hermes_cli.plugins_manifest import PluginManifest
 
     manager = PluginManager(scope_key=str(root))
-    manifest = PluginManifest(name="typesafe", source="user", path=str(plugin_dir))
+    manifest = PluginManifest(name="typesafe", source="user", path=str(plugin_copy))
     manager._load_plugin(manifest)
     path = manager.find_plugin_skill("typesafe:typesafe-system-one")
     print(json.dumps({"enabled": manager._plugins["typesafe"].enabled, "path": str(path) if path else None}))
@@ -143,6 +146,7 @@ def test_invalid_routing_pool_registers_no_hook(plugin: Any) -> None:
         def __init__(self) -> None:
             self.tools: list[dict[str, Any]] = []
             self.hooks: list[tuple[str, Any]] = []
+            self.unload: list[Any] = []
 
         def get_config(self, key: str, default: Any = None) -> Any:
             if key == "routing.enabled":
@@ -156,6 +160,9 @@ def test_invalid_routing_pool_registers_no_hook(plugin: Any) -> None:
 
         def register_hook(self, name: str, callback: Any) -> None:
             self.hooks.append((name, callback))
+
+        def on_unload(self, callback: Any) -> None:
+            self.unload.append(callback)
 
         def register_skill(self, name: str, path: Path, **kwargs: Any) -> None:
             del name, path, kwargs
@@ -201,6 +208,8 @@ def plugin_skill_names() -> tuple[str, ...]:
 
 
 def test_public_plugin_manager_resolves_qualified_bundled_skill() -> None:
+    if sys.version_info < (3, 12):
+        pytest.skip("pinned Hermes fixture lane requires CPython 3.12+")
     fixture = Path(os.environ.get("HERMES_TYPESAFE_HERMES_FIXTURE", "/tmp/hermes-typesafe-public-fixture"))
     if not fixture.is_dir():
         pytest.skip("immutable Hermes fixture is not available")

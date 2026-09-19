@@ -56,6 +56,7 @@ def test_register_reads_only_plugin_relative_defaults_and_registers_no_hooks(
 def test_missing_and_blank_keys_fail_closed_without_environment_fallback(
     plugin: Any, recording_context: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ambient-key-must-not-be-used")
     monkeypatch.setattr(plugin.tool_system_one, "_read_scoped_secret", lambda: None)
     plugin.register(recording_context)
     check_fn = recording_context.tools[0]["check_fn"]
@@ -64,6 +65,15 @@ def test_missing_and_blank_keys_fail_closed_without_environment_fallback(
     monkeypatch.setattr(plugin.tool_system_one, "_read_scoped_secret", lambda: "   ")
     assert check_fn() is False
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+
+
+def test_ambient_environment_key_never_enables_registration(
+    plugin: Any, recording_context: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TYPESAFE_API_KEY", "ambient-key-must-not-enable-plugin")
+    plugin.register(recording_context)
+
+    assert recording_context.tools[0]["check_fn"]() is False
 
 
 def test_present_synthetic_key_exposes_mixed_typed_schema_without_fake_answer(
@@ -151,6 +161,7 @@ def test_default_settings_are_inert_and_centralized_in_questions(plugin: Any) ->
     assert plugin.questions.GUARD_MEDIUM == 0.50
     assert plugin.questions.SUGGESTION_SHORTLIST == 3
     assert plugin.questions.SUGGESTION_EXCERPT_CHARS == 700
+    assert plugin.questions.ROUTING_HIGH == 0.80
 
 
 def test_registration_detaches_only_primitive_routing_settings(plugin: Any) -> None:
@@ -204,6 +215,8 @@ def test_source_build_identity_is_reproducible(plugin: Any) -> None:
     assert identity["abi"] == "typesafe-broker-v1"
     assert len(identity["build_sha256"]) == 64
     assert all(char in "0123456789abcdef" for char in identity["build_sha256"])
+    assert identity["identities_match"] is True
+    assert identity["generated_build_sha256"] == identity["native_build_sha256"]
 
 
 def test_flat_source_import_without_package_context_is_safe() -> None:

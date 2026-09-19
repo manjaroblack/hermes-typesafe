@@ -2,7 +2,9 @@ include README.md
 include plugin.yaml
 include pyproject.toml
 include setup.py
+include _build_identity.py
 include broker_src/hermes_typesafe_broker/*.py
+include skills/typesafe-system-one/SKILL.md
 prune docs
 prune tests
 prune .worktrees

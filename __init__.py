@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 if __package__:
-    from .build_identity import build_identity as _build_identity
+    from .build_identity import build_identity as _get_build_identity
     from .questions import (
         DEFAULT_MODEL,
         ROUTING_MODES,
@@ -29,7 +29,7 @@ if __package__:
         make_system_one_handler,
     )
 else:  # pragma: no cover - pytest can collect a flat plugin root as ``__init__``
-    from build_identity import build_identity as _build_identity
+    from build_identity import build_identity as _get_build_identity
     from questions import (
         DEFAULT_MODEL,
         ROUTING_MODES,
@@ -132,7 +132,7 @@ def default_settings() -> dict[str, Any]:
 def build_identity() -> dict[str, Any]:
     """Expose source/build identity for offline packaging checks only."""
 
-    return _build_identity()
+    return _get_build_identity()
 
 
 def _register_bundled_skill(ctx: Any) -> None:

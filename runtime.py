@@ -20,9 +20,11 @@ from types import ModuleType
 from typing import Any
 
 if __package__:
+    from ._build_identity import ABI as NATIVE_BROKER_ABI, BUILD_SHA256 as NATIVE_BUILD_SHA256
     from .client import AsyncTypeSafeClient, ClientError
     from .limits import LimitsError, ValidatedRequest, preflight_request
 else:  # pragma: no cover - flat plugin smoke import
+    from _build_identity import ABI as NATIVE_BROKER_ABI, BUILD_SHA256 as NATIVE_BUILD_SHA256
     from client import AsyncTypeSafeClient, ClientError
     from limits import LimitsError, ValidatedRequest, preflight_request
 
@@ -30,7 +32,8 @@ TOOL_TIMEOUT_SECONDS = 120.0
 HOOK_TIMEOUT_SECONDS = 2.0
 USEFUL_TOOL_SECONDS = 119.0
 USEFUL_HOOK_SECONDS = 1.8
-BROKER_ABI = "typesafe-broker-v1"
+BROKER_ABI = NATIVE_BROKER_ABI
+BROKER_BUILD_SHA256 = NATIVE_BUILD_SHA256
 
 
 def _valid_api_key(value: Any) -> bool:
@@ -185,7 +188,11 @@ def _load_broker() -> ModuleType:
         if origin_path is None or origin_path.is_symlink() or Path(expected).is_symlink() or origin_path.resolve() != expected.resolve():
             raise RuntimeUnavailable
     generated = _identity_literals(root / "_build_identity.py")
-    if generated.get("ABI") != BROKER_ABI or generated.get("BUILD_SHA256") != _source_digest(root):
+    if (
+        generated.get("ABI") != BROKER_ABI
+        or generated.get("BUILD_SHA256") != _source_digest(root)
+        or generated.get("BUILD_SHA256") != BROKER_BUILD_SHA256
+    ):
         raise RuntimeUnavailable
     try:
         broker = importlib.import_module("hermes_typesafe_broker.core")

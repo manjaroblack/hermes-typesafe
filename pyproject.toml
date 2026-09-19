@@ -20,16 +20,21 @@ test = [
   "build>=1,<2",
   "pytest>=8,<9",
   "pyyaml>=6,<7",
+  "setuptools>=68,<81",
+  "wheel>=0.42,<1",
 ]
 
 [tool.setuptools]
-include-package-data = true
+include-package-data = false
 packages = ["hermes_typesafe", "hermes_typesafe_broker"]
 package-dir = { hermes_typesafe = ".", hermes_typesafe_broker = "broker_src/hermes_typesafe_broker" }
 
 [tool.setuptools.package-data]
 hermes_typesafe = ["plugin.yaml", "skills/typesafe-system-one/SKILL.md"]
 hermes_typesafe_broker = ["_build_identity.py"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", "*.py[cod]"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not live'"

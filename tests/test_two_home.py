@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 import tempfile
 import threading
@@ -39,6 +40,10 @@ with tempfile.TemporaryDirectory(prefix="typesafe-two-home-") as temp:
     home_b = root / "home-b"
     home_a.mkdir()
     home_b.mkdir()
+    plugin_a = home_a / "plugins" / "typesafe"
+    plugin_b = home_b / "plugins" / "typesafe"
+    shutil.copytree(package_dir, plugin_a)
+    shutil.copytree(package_dir, plugin_b)
     for name in tuple(os.environ):
         if name.startswith("HERMES_") or name in {"PYTHONPATH", "TYPESAFE_API_KEY"}:
             os.environ.pop(name, None)
@@ -52,12 +57,13 @@ with tempfile.TemporaryDirectory(prefix="typesafe-two-home-") as temp:
     from tools.registry import registry
 
     set_multiplex_active(True)
-    manifest = PluginManifest(name="typesafe", source="user", path=str(package_dir))
+    manifest_a = PluginManifest(name="typesafe", source="user", path=str(plugin_a))
+    manifest_b = PluginManifest(name="typesafe", source="user", path=str(plugin_b))
     manager_a = PluginManager(scope_key=str(home_a))
     manager_b = PluginManager(scope_key=str(home_b))
     thread_ids_before = {thread.ident for thread in threading.enumerate()}
-    manager_a._load_plugin(manifest)
-    manager_b._load_plugin(manifest)
+    manager_a._load_plugin(manifest_a)
+    manager_b._load_plugin(manifest_b)
     thread_ids_after_register = {thread.ident for thread in threading.enumerate()}
 
     loaded_a = manager_a._plugins["typesafe"]
@@ -71,7 +77,11 @@ with tempfile.TemporaryDirectory(prefix="typesafe-two-home-") as temp:
     assert loaded_a.module.__name__ == "hermes_plugins.typesafe"
     assert loaded_b.module.__name__.startswith("hermes_plugins.typesafe__home_")
     assert loaded_a.module.__name__ != loaded_b.module.__name__
-    assert loaded_a.module.__file__ == loaded_b.module.__file__
+    assert loaded_a.manifest.path == str(plugin_a)
+    assert loaded_b.manifest.path == str(plugin_b)
+    assert Path(loaded_a.module.__file__).is_relative_to(plugin_a)
+    assert Path(loaded_b.module.__file__).is_relative_to(plugin_b)
+    assert loaded_a.module.__file__ != loaded_b.module.__file__
 
     entry_a = registry.get_entry("system_one", scope=manager_a.scope_key)
     entry_b = registry.get_entry("system_one", scope=manager_b.scope_key)
@@ -206,7 +216,7 @@ with tempfile.TemporaryDirectory(prefix="typesafe-two-home-") as temp:
     assert runtime_a._broker.stats()["active_operations"] == 0
     assert runtime_b._lease is not None
 
-    manager_a._load_plugin(manifest)
+    manager_a._load_plugin(manifest_a)
     loaded_a_reloaded = manager_a._plugins["typesafe"]
     assert loaded_a_reloaded.enabled and loaded_a_reloaded.error is None
     assert loaded_a_reloaded.module.__name__ == "hermes_plugins.typesafe"

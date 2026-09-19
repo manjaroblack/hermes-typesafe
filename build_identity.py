@@ -60,14 +60,20 @@ def build_identity() -> dict[str, Any]:
     computed = broker_source_digest(source_dir) if source_dir.is_dir() else None
     generated_path = source_dir / "_build_identity.py"
     generated = _read_generated_identity(generated_path) if generated_path.is_file() else {}
+    native_path = Path(__file__).with_name("_build_identity.py")
+    native = _read_generated_identity(native_path) if native_path.is_file() else {}
     if not generated:
         try:
             from hermes_typesafe_broker import ABI, BUILD_SHA256
         except Exception:
             ABI, BUILD_SHA256 = BROKER_ABI, ""
         generated = {"ABI": ABI, "BUILD_SHA256": BUILD_SHA256}
+    if not native:
+        native = {"ABI": generated.get("ABI", BROKER_ABI), "BUILD_SHA256": generated.get("BUILD_SHA256", "")}
     return {
-        "abi": generated.get("ABI", BROKER_ABI),
-        "build_sha256": computed or generated.get("BUILD_SHA256", ""),
+        "abi": native.get("ABI", generated.get("ABI", BROKER_ABI)),
+        "build_sha256": computed or native.get("BUILD_SHA256", generated.get("BUILD_SHA256", "")),
         "generated_build_sha256": generated.get("BUILD_SHA256", ""),
+        "native_build_sha256": native.get("BUILD_SHA256", ""),
+        "identities_match": native == generated,
     }

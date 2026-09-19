@@ -5,16 +5,17 @@ This repository contains the bounded typed client/runtime phase: registration,
 strict JSON preflight, mixed-question requests, sanitized responses, and an
 offline canonical broker boundary.
 
-Status: D implementation candidate; not feature-complete, not catalog-eligible,
+Status: H cumulative experimental candidate; not feature-complete, not catalog-eligible,
 and not installed into a live Hermes profile. Guardrails and suggestion remain
 held on the inspected host.
 
-Phase E adds pure, synthetic ranking/verified-descriptor fixtures and the
-plugin-local `typesafe-system-one` skill. The production suggestion adapter is
-inert with status `HELD_UNSUPPORTED_HOST`: it performs no roster discovery,
-filesystem scan, cache refresh, worker/queue work, or suggestion RPC. Synthetic
-helper success is not live suggestion support and does not satisfy the original
-catalog milestone.
+The cumulative implementation includes pure, synthetic ranking/verified-
+descriptor fixtures, the plugin-local `typesafe-system-one` skill, held
+guard helpers, hint-only routing, and a canonical installed broker. The
+production suggestion adapter is inert with status `HELD_UNSUPPORTED_HOST`:
+it performs no roster discovery, filesystem scan, cache refresh, worker/queue
+work, or suggestion RPC. Synthetic helper success is not live suggestion
+support and does not satisfy the original catalog milestone.
 
 ## Capability boundary
 
@@ -31,6 +32,27 @@ catalog milestone.
 A held feature is not a secure pass or a completed product requirement. The
 original suggestion and guardrail acceptance criteria remain open until a
 fresh host-capability design and review authorize activation.
+
+## H integration acceptance
+
+The reviewed H worktree is tested from the exact reviewed G ancestor. The
+distribution builds one wheel and source archive with explicit
+`hermes_typesafe` and `hermes_typesafe_broker` mappings, matching generated
+ABI/build identities, the plugin manifest, and the bundled skill. Archives
+exclude tests, docs, worktrees, bytecode, and environment files. The runtime
+requires that same installed wheel; a native copy or clone without its
+canonical broker dependency remains registered but returns a static
+`runtime_unavailable` result.
+
+The acceptance lane copies the installed plugin into two temporary Hermes
+homes and loads both copies through the pinned public `PluginManager`. It
+proves real namespaced registration, qualified skill discovery, one shared
+canonical broker, per-home secret/model isolation, four-operation global
+admission, unload/reload revocation, cancellation, and bounded shutdown.
+Default tests are keyless, socket-denied, and provider-mocked. An ambient
+`TYPESAFE_API_KEY` is never used as a fallback. Any optional live smoke is a
+separate explicit operator lane; absent credentials skip, authentication
+failure fails, and no credential or provider body is recorded.
 
 ## Guard helper boundary
 
@@ -135,13 +157,15 @@ slot until the underlying operation exits.
 
 ## Development
 
-The project supports Python 3.10+. Use the lockfile and an isolated virtual
-environment; do not install into a live Hermes profile.
+The package metadata accepts Python 3.10+. The canonical broker runtime is
+supported only on CPython 3.10, 3.11, and 3.12 main interpreters until a
+fresh capability review expands that boundary. Use the lockfile and an
+isolated virtual environment; do not install into a live Hermes profile.
 
 ```bash
-uv sync --extra test
-uv run pytest -q
-uv run python -m build
+uv sync --locked --extra test
+uv run --no-sync pytest -q
+uv build --wheel --sdist
 ```
 
 The default test command excludes the explicit `live` marker. Offline tests
@@ -158,8 +182,10 @@ input set.
 ## Security and privacy limits
 
 Only the explicitly invoked `system_one` tool sends bounded current state and
-questions to TypeSafe. Secrets, history, system prompts, tool results, host
-context, and raw exceptions are not projected into the request or error JSON.
+questions to TypeSafe; when routing is explicitly enabled, its advisory hook
+sends only the current `user_message`. Secrets, history, system prompts, tool
+results, host context, and raw exceptions are not projected into either
+request or error JSON.
 Requests use a fixed endpoint and model policy; ambient base/model variables and
 SDK debug body logging are suppressed. The held guardrails do not provide
 screening, approval, stream prevention, or a security boundary. Streaming text

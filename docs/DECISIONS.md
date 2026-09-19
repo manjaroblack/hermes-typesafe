@@ -36,6 +36,42 @@
    `core.py` bytes. Native copy-only installation without the matching wheel is
    documented as a later runtime prerequisite, not silently repaired.
 
+9. H retains the held suggestion and guard boundaries while adding hint-only
+   routing and the canonical installed broker. The broker is imported only as
+   `hermes_typesafe_broker.core` after provenance, ABI, build identity,
+   interpreter, lifecycle, and home checks.
+10. H packaging is one distribution: native plugin modules map to
+    `hermes_typesafe`, broker sources map to `hermes_typesafe_broker`, and both
+    generated identity files must match the same ABI and source digest.
+11. H acceptance copies the installed wheel's plugin package into two fresh
+    Hermes homes and uses the immutable public PluginManager. Source-checkout
+    imports and direct fake registration are not evidence for the installed
+    two-home contract.
+12. Default CI remains keyless, socket-denied, mocked, and `live`-excluded.
+    Routing may transmit only the current user message when explicitly enabled;
+    no model/config/cache/provider switch occurs. Merge, live installation,
+    deployment, visibility, tag, and catalog actions remain human gates.
+
+## H cumulative integration override
+
+The C/D/E/F/G notes above are historical phase receipts. H supersedes their
+phase-limited status statements with the following cumulative boundary:
+
+- H starts at exact G `940a579c1d879c8c5ef1ad30bb44426098e2e74b`; no intermediate
+  merge or moving-base rebase is used.
+- The wheel and sdist are acceptance artifacts, not live installation. The
+  native clone/copy is a discovery path only and requires the same reviewed
+  wheel in the Hermes interpreter.
+- The public fixture is pinned to
+  `ee4452991d17534aa561f31ee55596d082aa94e7`; every temporary home is isolated
+  from inherited Hermes/Kanban environment overrides.
+- Suggestion and guardrails are `HELD_UNSUPPORTED_HOST`. Pure helper fixtures
+  and zero-registration proofs do not satisfy their original live ACs or make
+  this candidate catalog-eligible.
+- Runtime success requires canonical installed broker ownership. Missing,
+  shadowed, mismatched, unsupported, or wrong-home seams fail closed without a
+  per-profile broker fallback.
+
 ## Held capabilities
 
 - Suggestion is `HELD_UNSUPPORTED_HOST`: no snapshot producer, roster crawl,
