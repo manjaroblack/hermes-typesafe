@@ -84,7 +84,9 @@ def test_malformed_questions_are_rejected_before_runtime_or_sdk(monkeypatch: pyt
 
 def test_handler_rejects_reserved_internal_kwargs_without_raw_type_error() -> None:
     handler = tool.make_system_one_handler({}, home_identity="home")
-    result = handler(_runtime=object())
+    raw = handler(_runtime=object())
+    assert type(raw) is str
+    result = json.loads(raw)
     assert result["error"]["code"] == "invalid_input"
 
 

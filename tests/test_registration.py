@@ -93,10 +93,12 @@ def test_present_synthetic_key_exposes_mixed_typed_schema_without_fake_answer(
     assert kinds == {"noul", "choice", "score"}
     assert entry["toolset"] == "typesafe"
 
-    result = entry["handler"]({"state": "synthetic", "questions": {}})
+    raw = entry["handler"]({"state": "synthetic", "questions": {}})
+    assert type(raw) is str
+    result = json.loads(raw)
     assert result["error"]["code"] == "invalid_input"
     assert "answers" not in result
-    assert "synthetic-key" not in json.dumps(result)
+    assert "synthetic-key" not in raw
 
 
 def test_import_and_registration_do_not_start_network_client_or_thread(
@@ -131,12 +133,14 @@ def test_registration_requires_unload_lifecycle_and_home_before_secret(
     plugin.register(recording_context)
     entry = recording_context.tools[0]
     assert entry["check_fn"]() is False
-    result = entry["handler"](
+    raw = entry["handler"](
         {
             "state": "text",
             "questions": {"safe": {"type": "noul", "instructions": "safe?"}},
         }
     )
+    assert type(raw) is str
+    result = json.loads(raw)
     assert result["error"]["code"] == "unavailable"
 
     missing_lifecycle = type(recording_context)()
