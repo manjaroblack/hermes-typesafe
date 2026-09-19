@@ -1,0 +1,11 @@
+include README.md
+include plugin.yaml
+include pyproject.toml
+include setup.py
+include broker_src/hermes_typesafe_broker/*.py
+prune docs
+prune tests
+prune .worktrees
+global-exclude .env
+global-exclude .env.*
+global-exclude *.py[cod]
