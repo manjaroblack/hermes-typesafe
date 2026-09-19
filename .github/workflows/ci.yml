@@ -37,6 +37,22 @@ jobs:
         run: python -m pip install --disable-pip-version-check "uv==0.10.10"
       - name: Sync locked environment
         run: uv sync --locked --extra test
+      - name: Build candidate wheel for installed integration
+        run: uv run --no-sync python -m build --wheel --outdir /tmp/typesafe-candidate
+      - name: Install candidate wheel
+        run: uv pip install --python .venv/bin/python --force-reinstall /tmp/typesafe-candidate/hermes_typesafe-*.whl
+      - name: Run installed-wheel two-home lane
+        if: matrix.python-version == '3.12'
+        env:
+          TYPESAFE_API_KEY: ""
+          HERMES_KANBAN_DB: ""
+          HERMES_KANBAN_BOARD: ""
+          HERMES_KANBAN_TASK: ""
+          HERMES_KANBAN_WORKSPACE: ""
+          HERMES_KANBAN_WORKSPACES_ROOT: ""
+          HERMES_TYPESAFE_HERMES_FIXTURE: /tmp/hermes-typesafe-public-fixture
+          HERMES_TYPESAFE_REQUIRE_FIXTURE: "true"
+        run: uv run --no-sync pytest -q tests/test_two_home.py
       - name: Run offline suite
         env:
           TYPESAFE_API_KEY: ""
@@ -47,6 +63,6 @@ jobs:
           HERMES_KANBAN_WORKSPACES_ROOT: ""
           HERMES_TYPESAFE_HERMES_FIXTURE: /tmp/hermes-typesafe-public-fixture
           HERMES_TYPESAFE_REQUIRE_FIXTURE: ${{ matrix.python-version == '3.12' }}
-        run: uv run pytest -q
+        run: uv run --no-sync pytest -q
       - name: Build wheel and sdist
         run: uv run python -m build --wheel --sdist

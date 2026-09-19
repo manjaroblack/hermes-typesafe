@@ -262,8 +262,7 @@ class TypeSafeRuntime:
         return current == self.home_identity
 
     def _lease_for_operation(self) -> tuple[ModuleType, Any] | None:
-        if not self._lock.acquire(blocking=False):
-            return None
+        self._lock.acquire()
         try:
             if self._closed or not self._available_home():
                 return None

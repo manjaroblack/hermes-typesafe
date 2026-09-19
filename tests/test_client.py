@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import io
+import logging
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -262,3 +265,211 @@ def test_client_bounds_direct_timeout_and_rejects_oversized_key(monkeypatch: pyt
         assert error.value.code == "unavailable"
 
     asyncio.run(run())
+
+
+@pytest.mark.parametrize(
+    ("status", "expected_code"),
+    [
+        (403, "permission_denied"),
+        (422, "invalid_request"),
+        (429, "rate_limited"),
+        (529, "provider_unavailable"),
+    ],
+)
+def test_client_maps_provider_statuses_to_stable_codes(
+    monkeypatch: pytest.MonkeyPatch, status: int, expected_code: str
+) -> None:
+    class StatusError(Exception):
+        def __init__(self) -> None:
+            self.status = status
+            self.body = {"sentinel": "provider-body"}
+            self.headers = {"x-secret": "provider-header"}
+
+    class FailingClient(FakeAsyncClient):
+        async def system_one(self, *_: object, **__: object) -> object:
+            raise StatusError
+
+    monkeypatch.setattr(
+        client,
+        "_load_sdk",
+        lambda: SimpleNamespace(AsyncTypeSafeClient=FailingClient, RetryPolicy=FakeRetryPolicy),
+    )
+
+    async def run() -> client.ClientError:
+        wrapper = client.AsyncTypeSafeClient(api_key="scoped-key")
+        try:
+            await wrapper.system_one("text", mixed_questions())
+        except client.ClientError as error:
+            return error
+        raise AssertionError("expected sanitized provider error")
+
+    error = asyncio.run(run())
+    assert error.code == expected_code
+    assert "provider-body" not in error.to_json()
+    assert "provider-header" not in error.to_json()
+
+
+def test_client_maps_connection_and_malformed_response_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    class ConnectionClient(FakeAsyncClient):
+        async def system_one(self, *_: object, **__: object) -> object:
+            raise ConnectionError("connection-body-sentinel")
+
+    monkeypatch.setattr(
+        client,
+        "_load_sdk",
+        lambda: SimpleNamespace(AsyncTypeSafeClient=ConnectionClient, RetryPolicy=FakeRetryPolicy),
+    )
+
+    async def run_connection() -> client.ClientError:
+        wrapper = client.AsyncTypeSafeClient(api_key="scoped-key")
+        try:
+            await wrapper.system_one("text", mixed_questions())
+        except client.ClientError as error:
+            return error
+        raise AssertionError("expected connection error")
+
+    connection = asyncio.run(run_connection())
+    assert connection.code == "connection_error"
+    assert "connection-body-sentinel" not in connection.to_json()
+
+    class ResponseValidationError(Exception):
+        pass
+
+    class MalformedClient(FakeAsyncClient):
+        async def system_one(self, *_: object, **__: object) -> object:
+            raise ResponseValidationError("malformed-response-sentinel")
+
+    monkeypatch.setattr(
+        client,
+        "_load_sdk",
+        lambda: SimpleNamespace(AsyncTypeSafeClient=MalformedClient, RetryPolicy=FakeRetryPolicy),
+    )
+
+    async def run_malformed() -> client.ClientError:
+        wrapper = client.AsyncTypeSafeClient(api_key="scoped-key")
+        try:
+            await wrapper.system_one("text", mixed_questions())
+        except client.ClientError as error:
+            return error
+        raise AssertionError("expected malformed response error")
+
+    malformed = asyncio.run(run_malformed())
+    assert malformed.code == "invalid_response"
+    assert "malformed-response-sentinel" not in malformed.to_json()
+
+
+def test_sdk_logging_suppression_restores_only_after_concurrent_contexts_exit() -> None:
+    sdk_logger = logging.getLogger("typesafe_sdk")
+    child_logger = logging.getLogger("typesafe_sdk.test.concurrent")
+    sdk_state = (sdk_logger.disabled, sdk_logger.level, sdk_logger.propagate, list(sdk_logger.handlers))
+    child_state = (child_logger.disabled, child_logger.level, child_logger.propagate, list(child_logger.handlers))
+    sdk_handler = logging.StreamHandler(io.StringIO())
+    child_handler = logging.StreamHandler(io.StringIO())
+    sdk_logger.disabled = False
+    sdk_logger.level = logging.DEBUG
+    sdk_logger.propagate = True
+    sdk_logger.handlers = [sdk_handler]
+    child_logger.disabled = False
+    child_logger.level = logging.DEBUG
+    child_logger.propagate = True
+    child_logger.handlers = [child_handler]
+
+    barrier = threading.Barrier(2)
+    first_exited = threading.Event()
+    second_active = threading.Event()
+    errors: list[BaseException] = []
+
+    def worker(first: bool) -> None:
+        try:
+            with client._suppress_sdk_logging():
+                assert sdk_logger.disabled is True
+                assert child_logger.disabled is True
+                barrier.wait(timeout=1.0)
+                if first:
+                    assert second_active.wait(timeout=1.0)
+                else:
+                    second_active.set()
+                    assert first_exited.wait(timeout=1.0)
+                    assert sdk_logger.disabled is True
+                    assert child_logger.disabled is True
+            if first:
+                first_exited.set()
+        except BaseException as error:  # pragma: no cover - surfaced below
+            errors.append(error)
+
+    first = threading.Thread(target=worker, args=(True,))
+    second = threading.Thread(target=worker, args=(False,))
+    first.start()
+    second.start()
+    first.join(timeout=2.0)
+    second.join(timeout=2.0)
+    try:
+        assert not errors
+        assert not first.is_alive()
+        assert not second.is_alive()
+        assert sdk_logger.disabled is False
+        assert child_logger.disabled is False
+        assert sdk_logger.handlers == [sdk_handler]
+        assert child_logger.handlers == [child_handler]
+    finally:
+        sdk_logger.disabled, sdk_logger.level, sdk_logger.propagate, handlers = sdk_state
+        sdk_logger.handlers = handlers
+        child_logger.disabled, child_logger.level, child_logger.propagate, handlers = child_state
+        child_logger.handlers = handlers
+
+
+def test_actual_sdk_debug_logging_is_suppressed_and_errors_are_sanitized(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import contextlib
+
+    import httpx2
+    import typesafe_sdk
+    from typesafe_sdk._core import logging as sdk_logging
+
+    marker = "typesafe-sdk-debug-body-sentinel"
+    monkeypatch.setenv("TYPESAFE_LOG_LEVEL", "debug")
+    sdk_logging.setup_logging()
+    stream = io.StringIO()
+    sdk_logger = logging.getLogger("typesafe_sdk")
+    child_logger = logging.getLogger("typesafe_sdk.transport.sentinel")
+    sdk_handler = logging.StreamHandler(stream)
+    child_handler = logging.StreamHandler(stream)
+    sdk_logger.addHandler(sdk_handler)
+    child_logger.addHandler(child_handler)
+
+    class LoggingTransport(httpx2.AsyncBaseTransport):
+        async def handle_async_request(self, request: object) -> httpx2.Response:
+            del request
+            sdk_logger.debug("%s parent", marker)
+            child_logger.debug("%s child", marker)
+            raise RuntimeError(marker)
+
+        async def aclose(self) -> None:
+            return None
+
+    monkeypatch.setattr(client, "_load_sdk", lambda: typesafe_sdk)
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            async def run() -> client.ClientError:
+                wrapper = client.AsyncTypeSafeClient(
+                    api_key="scoped-key", transport=LoggingTransport()  # type: ignore[arg-type]
+                )
+                try:
+                    await wrapper.system_one("text", mixed_questions())
+                except client.ClientError as error:
+                    return error
+                raise AssertionError("expected sanitized SDK failure")
+
+            error = asyncio.run(run())
+    finally:
+        sdk_logger.removeHandler(sdk_handler)
+        child_logger.removeHandler(child_handler)
+
+    captured_stdio = capsys.readouterr()
+    captured = "".join((stream.getvalue(), stdout.getvalue(), stderr.getvalue(), captured_stdio.out, captured_stdio.err))
+    assert error.code == "provider_unavailable"
+    assert marker not in captured
+    assert marker not in error.to_json()

@@ -221,6 +221,10 @@ def test_ci_pins_and_requires_public_hermes_fixture_on_python_312() -> None:
     assert "if: matrix.python-version == '3.12'" in workflow
     assert f"HERMES_TYPESAFE_HERMES_FIXTURE: {PUBLIC_HERMES_FIXTURE}" in workflow
     assert "HERMES_TYPESAFE_REQUIRE_FIXTURE:" in workflow
+    assert "Build candidate wheel for installed integration" in workflow
+    assert "Install candidate wheel" in workflow
+    assert "tests/test_two_home.py" in workflow
+    assert "uv run --no-sync pytest -q" in workflow
 
 
 def test_real_namespaced_plugin_manager_loads_and_unloads_in_isolation() -> None:

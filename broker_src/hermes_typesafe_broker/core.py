@@ -91,6 +91,7 @@ class _Broker:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._condition = threading.Condition(self._lock)
+        self._startup_lock = threading.Lock()
         self._state = "NEW"
         self._owner_pid = os.getpid()
         self._generation = 0
@@ -155,30 +156,31 @@ class _Broker:
             self._condition.notify_all()
 
     def _start_loop(self) -> bool:
-        with self._lock:
-            if self._state == "RUNNING":
-                return True
-            if self._state != "NEW":
-                return False
-            self._state = "STARTING"
-            self._startup_owner = threading.get_ident()
-            self._ready.clear()
-            thread = threading.Thread(target=self._thread_main, name="typesafe-broker", daemon=True)
-            self._thread = thread
-            try:
-                thread.start()
-            except Exception:
-                self._state = "BROKEN"
-                self._thread = None
-                self._condition.notify_all()
-                return False
-        if not self._ready.wait(CLEANUP_WAIT_SECONDS):
+        with self._startup_lock:
             with self._lock:
-                self._state = "BROKEN"
-                self._condition.notify_all()
-            return False
-        with self._lock:
-            return self._state == "RUNNING" and self._loop is not None
+                if self._state == "RUNNING":
+                    return True
+                if self._state != "NEW":
+                    return False
+                self._state = "STARTING"
+                self._startup_owner = threading.get_ident()
+                self._ready.clear()
+                thread = threading.Thread(target=self._thread_main, name="typesafe-broker", daemon=True)
+                self._thread = thread
+                try:
+                    thread.start()
+                except Exception:
+                    self._state = "BROKEN"
+                    self._thread = None
+                    self._condition.notify_all()
+                    return False
+            if not self._ready.wait(CLEANUP_WAIT_SECONDS):
+                with self._lock:
+                    self._state = "BROKEN"
+                    self._condition.notify_all()
+                return False
+            with self._lock:
+                return self._state == "RUNNING" and self._loop is not None
 
     def _thread_main(self) -> None:
         try:
@@ -229,13 +231,8 @@ class _Broker:
             self._active_operations += 1
             self._operations.add(operation)
             lease.operations.add(operation)
-            first_start = self._state == "NEW"
-            if self._state == "STARTING" and not first_start:
-                self._active_operations -= 1
-                self._operations.discard(operation)
-                lease.operations.discard(operation)
-                return None
-        if first_start and not self._start_loop():
+            start_needed = self._state in {"NEW", "STARTING"}
+        if start_needed and not self._start_loop():
             self._finish(operation, unavailable=True)
             return None
         with self._lock:

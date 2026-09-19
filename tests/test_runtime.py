@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, cast
@@ -217,27 +218,67 @@ def test_active_async_loop_uses_broker_without_asyncio_run_or_per_call_thread() 
 
 
 def test_timeout_cancels_without_early_slot_release() -> None:
+    cancellation_started = threading.Event()
+    cleanup_release = threading.Event()
+    cleanup_finished = threading.Event()
+
     class SlowClient(FakeClient):
         async def system_one(self, state: Any, questions: Any) -> dict[str, Any]:
             try:
                 await asyncio.sleep(30)
             except asyncio.CancelledError:
-                await asyncio.sleep(0.2)
+                cancellation_started.set()
+                while not cleanup_release.is_set():
+                    try:
+                        await asyncio.sleep(0.01)
+                    except asyncio.CancelledError:
+                        continue
+                cleanup_finished.set()
                 raise
             return {}
 
     runtime = TypeSafeRuntime(broker_loader=loader, client_factory=SlowClient)
-    with pytest.raises(Exception) as error:
-        runtime.execute_sync(
-            state="text",
-            questions=QUESTIONS,
-            model="jev-1.13.0",
-            api_key="scoped-key",
-            timeout=0.05,
-        )
-    assert getattr(error.value, "code", None) == "timeout"
-    assert broker.stats()["active_operations"] in {0, 1}
-    runtime.close()
+    try:
+        with pytest.raises(Exception) as error:
+            runtime.execute_sync(
+                state="text",
+                questions=QUESTIONS,
+                model="jev-1.13.0",
+                api_key="scoped-key",
+                timeout=0.05,
+            )
+        assert getattr(error.value, "code", None) == "timeout"
+        assert cancellation_started.wait(timeout=1.0)
+        assert broker.stats()["active_operations"] == 1
+
+        lease = runtime._lease
+        assert lease is not None
+
+        async def blocked() -> None:
+            await asyncio.sleep(30)
+
+        extra_operations = [
+            broker.try_submit(lease, time.monotonic() + 5.0, blocked)
+            for _ in range(3)
+        ]
+        assert all(operation is not None for operation in extra_operations)
+        assert broker.stats()["active_operations"] == 4
+
+        def fifth_work() -> None:
+            raise AssertionError("fifth work was invoked before admission")
+
+        assert broker.try_submit(lease, time.monotonic() + 5.0, fifth_work) is None
+        assert broker.stats()["active_operations"] == 4
+        assert cleanup_finished.is_set() is False
+    finally:
+        runtime.close()
+        time.sleep(0.05)
+        cleanup_release.set()
+        assert cleanup_finished.wait(timeout=1.0)
+        deadline = time.monotonic() + 1.0
+        while broker.stats()["active_operations"] and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert broker.stats()["active_operations"] == 0
 
 
 def test_shadow_broker_origin_is_not_owned_by_distribution_record(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

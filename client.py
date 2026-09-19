@@ -9,6 +9,7 @@ import inspect
 import json
 import logging
 import math
+import threading
 from collections.abc import Mapping
 from types import ModuleType
 from typing import Any, cast
@@ -22,6 +23,10 @@ else:  # pragma: no cover - flat plugin smoke import
 
 API_BASE_URL = "https://api.typesafe.ai"
 DEFAULT_HTTP_TIMEOUT = 119.0
+
+_SDK_LOGGING_LOCK = threading.RLock()
+_SDK_LOGGING_DEPTH = 0
+_SDK_LOGGING_STATES: dict[str, tuple[bool, int, bool, list[logging.Handler]]] = {}
 
 
 def _valid_api_key(value: Any) -> bool:
@@ -143,32 +148,40 @@ def _capped_transport(transport: Any) -> _CappedAsyncTransport:
 def _suppress_sdk_logging() -> Any:
     """Suppress SDK body-bearing records without touching root logger policy."""
 
-    before: dict[str, tuple[bool, int, bool, list[logging.Handler]]] = {}
-    lock = logging._lock  # type: ignore[attr-defined]
-    with lock:
-        for name, candidate in logging.Logger.manager.loggerDict.items():
-            if not name.startswith("typesafe_sdk") or not isinstance(candidate, logging.Logger):
-                continue
-            before[name] = (candidate.disabled, candidate.level, candidate.propagate, list(candidate.handlers))
-            candidate.disabled = True
-            candidate.handlers = []
-            candidate.propagate = False
-        sdk_logger = logging.getLogger("typesafe_sdk")
-        before.setdefault(
-            "typesafe_sdk",
-            (sdk_logger.disabled, sdk_logger.level, sdk_logger.propagate, list(sdk_logger.handlers)),
-        )
-        sdk_logger.disabled = True
-        sdk_logger.handlers = [logging.NullHandler()]
-        sdk_logger.propagate = False
+    global _SDK_LOGGING_DEPTH
+    with _SDK_LOGGING_LOCK:
+        with logging._lock:  # type: ignore[attr-defined]
+            sdk_logger = logging.getLogger("typesafe_sdk")
+            candidates = [("typesafe_sdk", sdk_logger)]
+            candidates.extend(
+                (name, candidate)
+                for name, candidate in logging.Logger.manager.loggerDict.items()
+                if name.startswith("typesafe_sdk") and isinstance(candidate, logging.Logger)
+            )
+            for name, candidate in candidates:
+                if name not in _SDK_LOGGING_STATES:
+                    _SDK_LOGGING_STATES[name] = (
+                        candidate.disabled,
+                        candidate.level,
+                        candidate.propagate,
+                        list(candidate.handlers),
+                    )
+                candidate.disabled = True
+                candidate.handlers = [logging.NullHandler()] if name == "typesafe_sdk" else []
+                candidate.propagate = False
+            _SDK_LOGGING_DEPTH += 1
     try:
         yield
     finally:
-        with lock:
-            for name, state in before.items():
-                candidate = logging.getLogger(name)
-                candidate.disabled, candidate.level, candidate.propagate, handlers = state
-                candidate.handlers = handlers
+        with _SDK_LOGGING_LOCK:
+            _SDK_LOGGING_DEPTH -= 1
+            if _SDK_LOGGING_DEPTH == 0:
+                with logging._lock:  # type: ignore[attr-defined]
+                    for name, state in _SDK_LOGGING_STATES.items():
+                        candidate = logging.getLogger(name)
+                        candidate.disabled, candidate.level, candidate.propagate, handlers = state
+                        candidate.handlers = handlers
+                    _SDK_LOGGING_STATES.clear()
 
 
 def _error_from_exception(error: BaseException) -> ClientError:
