@@ -83,7 +83,7 @@ def test_present_synthetic_key_exposes_mixed_typed_schema_without_fake_answer(
     assert entry["toolset"] == "typesafe"
 
     result = entry["handler"]({"state": "synthetic", "questions": {}})
-    assert result["error"]["code"] == "runtime_unavailable"
+    assert result["error"]["code"] == "invalid_input"
     assert "answers" not in result
     assert "synthetic-key" not in json.dumps(result)
 
@@ -109,6 +109,32 @@ def test_import_and_registration_do_not_start_network_client_or_thread(
     assert "typesafe_sdk" not in set(sys.modules) - before
 
 
+def test_registration_requires_unload_lifecycle_and_home_before_secret(
+    plugin: Any, recording_context: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(plugin.tool_system_one, "_capture_home_identity", lambda: "home-a")
+    monkeypatch.setattr(plugin, "_capture_home_identity", lambda: "home-a")
+    monkeypatch.setattr(plugin.tool_system_one, "_effective_home", lambda: "home-b")
+    monkeypatch.setattr(plugin.tool_system_one, "_read_scoped_secret", lambda: pytest.fail("secret read in wrong home"))
+    recording_context.on_unload = lambda callback: None
+    plugin.register(recording_context)
+    entry = recording_context.tools[0]
+    assert entry["check_fn"]() is False
+    result = entry["handler"](
+        {
+            "state": "text",
+            "questions": {"safe": {"type": "noul", "instructions": "safe?"}},
+        }
+    )
+    assert result["error"]["code"] == "unavailable"
+
+    missing_lifecycle = type(recording_context)()
+    monkeypatch.setattr(plugin.tool_system_one, "_capture_home_identity", lambda: "home-a")
+    monkeypatch.setattr(plugin, "_capture_home_identity", lambda: "home-a")
+    plugin.register(missing_lifecycle)
+    assert missing_lifecycle.tools[0]["handler"]._typesafe_runtime._closed is True
+
+
 def test_default_settings_are_inert_and_centralized_in_questions(plugin: Any) -> None:
     settings = plugin.default_settings()
 
@@ -124,6 +150,45 @@ def test_default_settings_are_inert_and_centralized_in_questions(plugin: Any) ->
     assert plugin.questions.GUARD_MEDIUM == 0.50
     assert plugin.questions.SUGGESTION_SHORTLIST == 3
     assert plugin.questions.SUGGESTION_EXCERPT_CHARS == 700
+
+
+def test_registration_detaches_only_primitive_routing_settings(plugin: Any) -> None:
+    context: Any = type("Context", (), {})()
+    context.config = {"model": "m" * 129, "routing.models": {"safe": object(), "typed": "jev-1.13.0"}}
+    context.tools = []
+    context.hooks = []
+    context.get_config = lambda key, default=None: context.config.get(key, default)
+    context.register_tool = lambda **kwargs: context.tools.append(kwargs)
+    plugin.register(context)
+    settings = context.tools[0]["handler"]._typesafe_runtime.settings
+    assert settings["model"] == "jev-1.13.0"
+    assert settings["routing.models"] == {"typed": "jev-1.13.0"}
+
+
+def test_registration_closes_runtime_when_tool_registration_fails(plugin: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+    original_factory = plugin.make_system_one_handler
+
+    def capture_factory(settings: Any, **kwargs: Any) -> Any:
+        handler = original_factory(settings, **kwargs)
+        captured["handler"] = handler
+        return handler
+
+    class FailingContext:
+        def get_config(self, key: str, default: Any = None) -> Any:
+            return default
+
+        def on_unload(self, callback: Any) -> None:
+            del callback
+
+        def register_tool(self, **kwargs: Any) -> None:
+            del kwargs
+            raise RuntimeError("registration sentinel")
+
+    monkeypatch.setattr(plugin, "make_system_one_handler", capture_factory)
+    with pytest.raises(RuntimeError, match="registration sentinel"):
+        plugin.register(FailingContext())
+    assert captured["handler"]._typesafe_runtime._closed is True
 
 
 def test_source_build_identity_is_reproducible(plugin: Any) -> None:
