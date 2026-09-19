@@ -1,11 +1,13 @@
 """Hermes TypeSafe native plugin foundation.
 
-Only the typed tool registration exists in this phase. Guardrails, suggestion,
-routing, and provider execution are intentionally held or deferred.
+Only the typed tool and the inert bundled-skill registration exist in this
+phase. Guardrails, suggestion, routing, and provider execution are otherwise
+intentionally held or deferred.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 if __package__:
@@ -13,6 +15,7 @@ if __package__:
     from .questions import default_settings as _default_settings
     from .questions import DEFAULT_MODEL
     from .runtime import runtime_status
+    from .skills_adapter import HELD_UNSUPPORTED_HOST, HeldSkillsAdapter
     from .tool_system_one import (
         API_KEY_ENV,
         SYSTEM_ONE_SCHEMA,
@@ -24,6 +27,7 @@ else:  # pragma: no cover - pytest can collect a flat plugin root as ``__init__`
     from build_identity import build_identity as _build_identity
     from questions import DEFAULT_MODEL, default_settings as _default_settings
     from runtime import runtime_status
+    from skills_adapter import HELD_UNSUPPORTED_HOST, HeldSkillsAdapter
     from tool_system_one import (
         API_KEY_ENV,
         SYSTEM_ONE_SCHEMA,
@@ -106,6 +110,18 @@ def build_identity() -> dict[str, Any]:
     return _build_identity()
 
 
+def _register_bundled_skill(ctx: Any) -> None:
+    """Register the shipped skill when the native context exposes that seam."""
+
+    register_skill = getattr(ctx, "register_skill", None)
+    if not callable(register_skill):
+        return
+    skill_path = Path(__file__).parent / "skills" / "typesafe-system-one" / "SKILL.md"
+    if not skill_path.is_file():
+        return
+    register_skill("typesafe-system-one", skill_path)
+
+
 def register(ctx: Any) -> None:
     """Register the one honest tool without hooks, persistence, or side effects."""
 
@@ -123,6 +139,7 @@ def register(ctx: Any) -> None:
             runtime.close()
             raise
     try:
+        _register_bundled_skill(ctx)
         ctx.register_tool(
             name="system_one",
             toolset="typesafe",
@@ -147,7 +164,9 @@ def register(ctx: Any) -> None:
 
 __all__ = [
     "API_KEY_ENV",
+    "HELD_UNSUPPORTED_HOST",
     "SYSTEM_ONE_SCHEMA",
+    "HeldSkillsAdapter",
     "build_identity",
     "default_settings",
     "register",

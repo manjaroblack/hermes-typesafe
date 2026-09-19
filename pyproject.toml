@@ -28,7 +28,7 @@ packages = ["hermes_typesafe", "hermes_typesafe_broker"]
 package-dir = { hermes_typesafe = ".", hermes_typesafe_broker = "broker_src/hermes_typesafe_broker" }
 
 [tool.setuptools.package-data]
-hermes_typesafe = ["plugin.yaml"]
+hermes_typesafe = ["plugin.yaml", "skills/typesafe-system-one/SKILL.md"]
 hermes_typesafe_broker = ["_build_identity.py"]
 
 [tool.pytest.ini_options]

@@ -9,6 +9,13 @@ Status: D implementation candidate; not feature-complete, not catalog-eligible,
 and not installed into a live Hermes profile. Guardrails and suggestion remain
 held on the inspected host.
 
+Phase E adds pure, synthetic ranking/verified-descriptor fixtures and the
+plugin-local `typesafe-system-one` skill. The production suggestion adapter is
+inert with status `HELD_UNSUPPORTED_HOST`: it performs no roster discovery,
+filesystem scan, cache refresh, worker/queue work, or suggestion RPC. Synthetic
+helper success is not live suggestion support and does not satisfy the original
+catalog milestone.
+
 ## Capability boundary
 
 | Capability | Current behavior |
@@ -16,6 +23,7 @@ held on the inspected host.
 | `system_one` tool | Registered under toolset `typesafe`; key-gated; accepts bounded string/object/array state and one mixed `noul`/`choice`/`score` batch. |
 | TypeSafe client/network | Lazy per-operation SDK client; fixed `https://api.typesafe.ai/v1/systemone`, pinned `jev-1.13.0` default, retry count zero, and sanitized errors. |
 | Suggestion hook | `HELD_UNSUPPORTED_HOST`; no hook, roster scan, snapshot, cache, or RPC. |
+| Bundled skill | `typesafe:typesafe-system-one`; documents the bounded tool contract and held capabilities. |
 | Guardrails | `HELD_UNSUPPORTED_HOST`; no `pre_tool_call` or `transform_llm_output` callback, approval call, or final-output claim. |
 | Routing | Default-off and not registered in this phase; later routing is advisory only. |
 | Canonical broker | The same distribution carries `hermes_typesafe_broker.core`; runtime admission is unavailable when provenance, interpreter, lease, or broker checks fail. |
