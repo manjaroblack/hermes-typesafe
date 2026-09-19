@@ -14,6 +14,10 @@ import pytest
 from conftest import ROOT
 
 
+PUBLIC_HERMES_SHA = "ee4452991d17534aa561f31ee55596d082aa94e7"
+PUBLIC_HERMES_FIXTURE = "/tmp/hermes-typesafe-public-fixture"
+
+
 @pytest.mark.usefixtures("plugin")
 def test_manifest_declares_only_the_registered_tool_and_required_secret() -> None:
     manifest = (ROOT / "plugin.yaml").read_text(encoding="utf-8")
@@ -143,29 +147,65 @@ def test_flat_source_import_without_package_context_is_safe() -> None:
     assert result.returncode == 0, result.stderr
 
 
+def test_ci_pins_and_requires_public_hermes_fixture_on_python_312() -> None:
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert PUBLIC_HERMES_SHA in workflow
+    assert "Fetch immutable Hermes integration fixture" in workflow
+    assert f"git init {PUBLIC_HERMES_FIXTURE}" in workflow
+    assert "if: matrix.python-version == '3.12'" in workflow
+    assert f"HERMES_TYPESAFE_HERMES_FIXTURE: {PUBLIC_HERMES_FIXTURE}" in workflow
+    assert "HERMES_TYPESAFE_REQUIRE_FIXTURE:" in workflow
+
+
 def test_real_namespaced_plugin_manager_loads_and_unloads_in_isolation() -> None:
     if sys.version_info < (3, 11):
         pytest.skip("public Hermes fixture integration requires Python >=3.11")
-    fixture = Path(
-        os.environ.get("HERMES_TYPESAFE_HERMES_FIXTURE", "/tmp/hermes-typesafe-public-fixture")
-    )
+    fixture = Path(os.environ.get("HERMES_TYPESAFE_HERMES_FIXTURE", PUBLIC_HERMES_FIXTURE))
+    fixture_required = os.environ.get("HERMES_TYPESAFE_REQUIRE_FIXTURE", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     if not fixture.is_dir():
+        if fixture_required:
+            pytest.fail("required immutable Hermes fixture is not available")
         pytest.skip("immutable Hermes fixture is not available")
+
+    fixture_head = subprocess.run(
+        ["git", "-C", str(fixture), "rev-parse", "HEAD"],
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert fixture_head.returncode == 0, fixture_head.stderr
+    assert fixture_head.stdout.strip() == PUBLIC_HERMES_SHA
 
     script = r'''
 import json
+import os
 import sys
 import tempfile
 from pathlib import Path
 
 fixture = Path(sys.argv[1])
 plugin_dir = Path(sys.argv[2])
-sys.path.insert(0, str(fixture))
-from hermes_cli.plugins import PluginManager
-from hermes_cli.plugins_manifest import PluginManifest
 
 with tempfile.TemporaryDirectory(prefix="typesafe-hermes-home-") as home:
-    manager = PluginManager(scope_key=home)
+    isolated_home = Path(home)
+    for name in tuple(os.environ):
+        if name.startswith("HERMES_") or name in {"PYTHONPATH", "TYPESAFE_API_KEY"}:
+            os.environ.pop(name, None)
+    os.environ["HOME"] = str(isolated_home)
+    os.environ["HERMES_HOME"] = str(isolated_home)
+    assert Path.home() == isolated_home
+    assert not any(name.startswith("HERMES_KANBAN_") for name in os.environ)
+
+    sys.path.insert(0, str(fixture))
+    from hermes_cli.plugins import PluginManager
+    from hermes_cli.plugins_manifest import PluginManifest
+
+    manager = PluginManager(scope_key=str(isolated_home))
     manifest = PluginManifest(name="typesafe", source="user", path=str(plugin_dir))
     manager._load_plugin(manifest)
     loaded = manager._plugins["typesafe"]
@@ -180,18 +220,11 @@ with tempfile.TemporaryDirectory(prefix="typesafe-hermes-home-") as home:
     manager.unload()
     print(json.dumps(result, sort_keys=True))
 '''
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(fixture)
-    env["HERMES_HOME"] = str(fixture / ".pytest-typesafe-home")
-    for name in (
-        "HERMES_KANBAN_DB",
-        "HERMES_KANBAN_BOARD",
-        "HERMES_KANBAN_TASK",
-        "HERMES_KANBAN_WORKSPACE",
-        "HERMES_KANBAN_WORKSPACES_ROOT",
-        "TYPESAFE_API_KEY",
-    ):
-        env.pop(name, None)
+    env = {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith("HERMES_") and name not in {"PYTHONPATH", "TYPESAFE_API_KEY"}
+    }
     result = subprocess.run(
         [sys.executable, "-c", script, str(fixture), str(ROOT)],
         env=env,

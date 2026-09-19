@@ -23,6 +23,16 @@ jobs:
         uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Fetch immutable Hermes integration fixture
+        if: matrix.python-version == '3.12'
+        env:
+          HERMES_FIXTURE_SHA: ee4452991d17534aa561f31ee55596d082aa94e7
+        run: |
+          git init /tmp/hermes-typesafe-public-fixture
+          git -C /tmp/hermes-typesafe-public-fixture remote add origin https://github.com/NousResearch/hermes-agent.git
+          git -C /tmp/hermes-typesafe-public-fixture fetch --depth 1 origin "$HERMES_FIXTURE_SHA"
+          git -C /tmp/hermes-typesafe-public-fixture checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/hermes-typesafe-public-fixture rev-parse HEAD)" = "$HERMES_FIXTURE_SHA"
       - name: Install locked project dependencies
         run: python -m pip install --disable-pip-version-check "uv==0.10.10"
       - name: Sync locked environment
@@ -35,6 +45,8 @@ jobs:
           HERMES_KANBAN_TASK: ""
           HERMES_KANBAN_WORKSPACE: ""
           HERMES_KANBAN_WORKSPACES_ROOT: ""
+          HERMES_TYPESAFE_HERMES_FIXTURE: /tmp/hermes-typesafe-public-fixture
+          HERMES_TYPESAFE_REQUIRE_FIXTURE: ${{ matrix.python-version == '3.12' }}
         run: uv run pytest -q
       - name: Build wheel and sdist
         run: uv run python -m build --wheel --sdist
