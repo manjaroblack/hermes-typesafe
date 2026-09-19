@@ -245,6 +245,8 @@ def make_system_one_handler(
     )
 
     def handler(arguments: Mapping[str, Any] | None = None, **kwargs: Any) -> str:
+        # Hermes dispatch is handler(args, **host_kwargs). Host metadata must not
+        # become TypeSafe fields, and callers must not inject internal runtime kwargs.
         if set(kwargs) & _INTERNAL_KWARGS:
             payload = _error_result(ClientError("invalid_input"))
         else:
@@ -254,7 +256,6 @@ def make_system_one_handler(
                 _settings=detached_settings,
                 _home_identity=captured_home,
                 _require_home_identity=True,
-                **kwargs,
             )
         return json.dumps(payload, ensure_ascii=True, sort_keys=True)
 
