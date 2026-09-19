@@ -90,6 +90,14 @@ def test_handler_rejects_reserved_internal_kwargs_without_raw_type_error() -> No
     assert result["error"]["code"] == "invalid_input"
 
 
+def test_handler_ignores_host_dispatch_kwargs() -> None:
+    handler = tool.make_system_one_handler({}, home_identity="home")
+    raw = handler(mixed_arguments(), task_id="t", session_id="s")
+    assert type(raw) is str
+    result = json.loads(raw)
+    assert result.get("error", {}).get("code") != "invalid_input"
+
+
 def test_keyless_and_blank_key_are_unavailable_without_runtime_start(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(tool, "_execute_request", lambda **_: pytest.fail("runtime invoked without key"))
     for key in (None, "", "   "):
