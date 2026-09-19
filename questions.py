@@ -20,6 +20,19 @@ SUGGESTION_FITS = 0.30
 SUGGESTION_SHORTLIST = 3
 SUGGESTION_EXCERPT_CHARS = 700
 ROUTING_HIGH = 0.80
+ROUTING_MODES = frozenset({"off", "first_turn", "cache_break_if_worth_it"})
+ROUTING_POOL_NAMES = frozenset({"cheap", "coding", "reasoning", "long-context"})
+ROUTING_POOL_MAX = 4
+ROUTING_CHOICE = "target_model"
+ROUTING_MISMATCH = "current_model_mismatch"
+ROUTING_WORTH = "worth_breaking_cache"
+ROUTING_DIFFICULTY = "difficulty"
+ROUTING_DIFFICULTY_LEVELS = ("routine", "moderate", "difficult", "expert")
+
+ROUTING_CHOICE_INSTRUCTIONS = "Which configured model label best fits the current request?"
+ROUTING_MISMATCH_INSTRUCTIONS = "How strongly does the current model mismatch this request?"
+ROUTING_WORTH_INSTRUCTIONS = "How worthwhile would breaking the current model cache be for this request?"
+ROUTING_DIFFICULTY_INSTRUCTIONS = "How difficult is the current request?"
 
 GUARD_CHECKS = (
     "jailbreak_injection",
@@ -83,6 +96,33 @@ def default_settings() -> dict[str, Any]:
     """Return a detached copy of inert plugin settings."""
 
     return deepcopy(DEFAULT_SETTINGS)
+
+
+def routing_questions(target_names: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+    """Build the single advisory routing batch from local pool labels."""
+
+    if not target_names or len(target_names) > 4 or len(set(target_names)) != len(target_names):
+        raise ValueError("routing target labels are invalid")
+    return {
+        ROUTING_CHOICE: {
+            "type": "choice",
+            "instructions": ROUTING_CHOICE_INSTRUCTIONS,
+            "criteria": {name: None for name in target_names},
+        },
+        ROUTING_MISMATCH: {
+            "type": "noul",
+            "instructions": ROUTING_MISMATCH_INSTRUCTIONS,
+        },
+        ROUTING_WORTH: {
+            "type": "noul",
+            "instructions": ROUTING_WORTH_INSTRUCTIONS,
+        },
+        ROUTING_DIFFICULTY: {
+            "type": "score",
+            "instructions": ROUTING_DIFFICULTY_INSTRUCTIONS,
+            "criteria": list(ROUTING_DIFFICULTY_LEVELS),
+        },
+    }
 
 
 def resolve_guard_thresholds(

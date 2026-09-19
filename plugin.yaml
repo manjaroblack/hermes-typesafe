@@ -7,7 +7,8 @@ requires_env:
   - TYPESAFE_API_KEY
 provides_tools:
   - system_one
-provides_hooks: []
+provides_hooks:
+  - pre_llm_call
 python_dependencies:
   - "typesafe-sdk>=0.7,<0.9"
 license: MIT

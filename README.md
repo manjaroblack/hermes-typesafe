@@ -25,7 +25,7 @@ catalog milestone.
 | Suggestion hook | `HELD_UNSUPPORTED_HOST`; no hook, roster scan, snapshot, cache, or RPC. |
 | Bundled skill | `typesafe:typesafe-system-one`; documents the bounded tool contract and held capabilities. |
 | Guardrails | `HELD_UNSUPPORTED_HOST`; no `pre_tool_call` or `transform_llm_output` callback, approval call, or final-output claim. |
-| Routing | Default-off and not registered in this phase; later routing is advisory only. |
+| Routing | Default-off `pre_llm_call` advisory hook; one current-message batch can suggest a configured pool label, but never switches models or mutates config/cache/provider state. |
 | Canonical broker | The same distribution carries `hermes_typesafe_broker.core`; runtime admission is unavailable when provenance, interpreter, lease, or broker checks fail. |
 
 A held feature is not a secure pass or a completed product requirement. The
@@ -90,9 +90,37 @@ plugins:
           models: {}
 ```
 
-The model is pinned to `jev-1.13.0`; ambient model/base-URL variables do not
+An enabled pool uses the strict named-entry shape:
+
+```yaml
+routing:
+  enabled: true
+  mode: first_turn
+  models:
+    cheap:
+      model: jev-1.13.0
+      provider: typesafe
+    coding:
+      model: jev-coding
+      provider: typesafe
+```
+
+The model is pinned to `jev-1.13.0`; ambient base/model variables do not
 override the product contract. `questions.py` is the single production home
 for decision thresholds and built-in question policy.
+
+Routing is opt-in and accepts only the named `cheap`, `coding`, `reasoning`, and
+`long-context` labels. Each entry is a local `{model, provider}` pair;
+provider/model identities remain local and are never sent as routing state;
+duplicate model identities are ambiguous and fail closed. The hook sends only
+the original current `user_message` and uses the actual boolean `is_first_turn`
+value. `first_turn` evaluates only a first turn; `cache_break_if_worth_it`
+evaluates eligible turns and logs the hypothetical phrase `would have switched`
+only after all `.80` gates pass.
+Every returned suffix is an advisory hint and states that no model switch was
+performed. Empty or invalid pools, missing keys, malformed responses, provider
+faults, timeouts, and ambiguous model identities return no context. The
+suggestion and guardrail capabilities remain held on this host.
 
 ## Bounded runtime
 

@@ -27,7 +27,8 @@ def test_manifest_declares_only_the_registered_tool_and_required_secret() -> Non
     assert "TYPESAFE_API_KEY" in manifest
     assert "provides_tools:" in manifest
     assert "system_one" in manifest
-    assert "provides_hooks: []" in manifest
+    assert "provides_hooks:" in manifest
+    assert "pre_llm_call" in manifest
     assert "pre_tool_call" not in manifest
     assert "transform_llm_output" not in manifest
     assert "capabilities:" not in manifest
@@ -154,7 +155,13 @@ def test_default_settings_are_inert_and_centralized_in_questions(plugin: Any) ->
 
 def test_registration_detaches_only_primitive_routing_settings(plugin: Any) -> None:
     context: Any = type("Context", (), {})()
-    context.config = {"model": "m" * 129, "routing.models": {"safe": object(), "typed": "jev-1.13.0"}}
+    context.config = {
+        "model": "m" * 129,
+        "routing.models": {
+            "cheap": {"model": "jev-cheap", "provider": "typesafe"},
+            "typed": "jev-1.13.0",
+        },
+    }
     context.tools = []
     context.hooks = []
     context.get_config = lambda key, default=None: context.config.get(key, default)
@@ -162,7 +169,7 @@ def test_registration_detaches_only_primitive_routing_settings(plugin: Any) -> N
     plugin.register(context)
     settings = context.tools[0]["handler"]._typesafe_runtime.settings
     assert settings["model"] == "jev-1.13.0"
-    assert settings["routing.models"] == {"typed": "jev-1.13.0"}
+    assert settings["routing.models"] == {}
 
 
 def test_registration_closes_runtime_when_tool_registration_fails(plugin: Any, monkeypatch: pytest.MonkeyPatch) -> None:

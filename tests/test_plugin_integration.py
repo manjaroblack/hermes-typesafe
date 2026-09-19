@@ -100,6 +100,72 @@ def test_guard_flag_on_current_host_registers_no_guard_callback_or_side_effect(p
     assert "typesafe_sdk" not in set(sys.modules) - before_modules
 
 
+def test_enabled_routing_registers_only_the_documented_pre_llm_hook(plugin: Any) -> None:
+    class Context:
+        def __init__(self) -> None:
+            self.tools: list[dict[str, Any]] = []
+            self.hooks: list[tuple[str, Any]] = []
+            self.unload: list[Any] = []
+
+        def get_config(self, key: str, default: Any = None) -> Any:
+            values = {
+                "routing.enabled": True,
+                "routing.mode": "first_turn",
+                "routing.models": {
+                    "cheap": {"model": "jev-cheap", "provider": "typesafe"},
+                    "coding": {"model": "jev-coding", "provider": "typesafe"},
+                },
+            }
+            return values.get(key, default)
+
+        def register_tool(self, **kwargs: Any) -> None:
+            self.tools.append(kwargs)
+
+        def register_hook(self, name: str, callback: Any) -> None:
+            self.hooks.append((name, callback))
+
+        def register_skill(self, name: str, path: Path, **kwargs: Any) -> None:
+            del name, path, kwargs
+
+        def on_unload(self, callback: Any) -> None:
+            self.unload.append(callback)
+
+    context = Context()
+    plugin.register(context)
+
+    assert [name for name, _ in context.hooks] == ["pre_llm_call"]
+    assert callable(context.hooks[0][1])
+    assert len(context.unload) == 1
+
+
+def test_invalid_routing_pool_registers_no_hook(plugin: Any) -> None:
+    class Context:
+        def __init__(self) -> None:
+            self.tools: list[dict[str, Any]] = []
+            self.hooks: list[tuple[str, Any]] = []
+
+        def get_config(self, key: str, default: Any = None) -> Any:
+            if key == "routing.enabled":
+                return True
+            if key == "routing.models":
+                return {"cheap": {"model": "jev-cheap", "provider": "typesafe"}, "bad": {}}
+            return default
+
+        def register_tool(self, **kwargs: Any) -> None:
+            self.tools.append(kwargs)
+
+        def register_hook(self, name: str, callback: Any) -> None:
+            self.hooks.append((name, callback))
+
+        def register_skill(self, name: str, path: Path, **kwargs: Any) -> None:
+            del name, path, kwargs
+
+    context = Context()
+    plugin.register(context)
+
+    assert context.hooks == []
+
+
 def test_native_registration_exposes_bundled_skill_for_qualified_lookup(plugin: Any) -> None:
     class Context:
         def __init__(self) -> None:
