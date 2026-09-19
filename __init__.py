@@ -2,7 +2,9 @@
 
 Only the typed tool and the inert bundled-skill registration exist in this
 phase. Guardrails, suggestion, routing, and provider execution are otherwise
-intentionally held or deferred.
+intentionally held or deferred. The pure ``guard`` helpers are not imported
+or registered here: current hosts cannot provide the required atomic guard
+semantics, so enabling the flag does not create callbacks or approval paths.
 """
 
 from __future__ import annotations

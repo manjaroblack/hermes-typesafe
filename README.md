@@ -32,6 +32,23 @@ A held feature is not a secure pass or a completed product requirement. The
 original suggestion and guardrail acceptance criteria remain open until a
 fresh host-capability design and review authorize activation.
 
+## Guard helper boundary
+
+Phase F adds `guard.py` as a pure, deterministic synthetic helper only. It
+classifies explicit bounded fixture answers for the three built-in questions,
+creates a local v3 digest for a fully identified synthetic call, and produces
+static final-text representations for tests. `questions.py` remains the sole
+production home for guard questions, rubrics, score bounds, and thresholds.
+
+The plugin still registers zero `pre_tool_call` and
+`transform_llm_output` callbacks even when `guardrails.enabled` is true. The
+helper never calls the TypeSafe SDK, Hermes approval store, tool dispatcher, or
+host configuration, and its `approve`/`block`/replacement values are not
+security decisions or Hermes approval directives. Missing medium-call
+identity refuses the synthetic approval key without a stable per-check
+fallback. High/medium composition at the current host remains
+`DEFERRED_HOST_CAPABILITY`; streamed or interim text cannot be retracted.
+
 ## Installation contract
 
 The native discovery path is a copy or git clone at

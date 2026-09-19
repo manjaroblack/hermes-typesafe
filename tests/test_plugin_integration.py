@@ -73,6 +73,33 @@ def test_flag_on_current_host_registers_no_suggestion_hook(plugin: Any) -> None:
     assert [entry["name"] for entry in context.tools] == ["system_one"]
 
 
+def test_guard_flag_on_current_host_registers_no_guard_callback_or_side_effect(plugin: Any) -> None:
+    class Context:
+        def __init__(self) -> None:
+            self.tools: list[dict[str, Any]] = []
+            self.hooks: list[tuple[str, Any]] = []
+
+        def get_config(self, key: str, default: Any = None) -> Any:
+            if key == "guardrails.enabled":
+                return True
+            return default
+
+        def register_tool(self, **kwargs: Any) -> None:
+            self.tools.append(kwargs)
+
+        def register_hook(self, name: str, callback: Any) -> None:
+            del name, callback
+            raise AssertionError("held guardrails must not register a hook")
+
+    before_modules = set(sys.modules)
+    context = Context()
+    plugin.register(context)
+
+    assert context.hooks == []
+    assert [entry["name"] for entry in context.tools] == ["system_one"]
+    assert "typesafe_sdk" not in set(sys.modules) - before_modules
+
+
 def test_native_registration_exposes_bundled_skill_for_qualified_lookup(plugin: Any) -> None:
     class Context:
         def __init__(self) -> None:
