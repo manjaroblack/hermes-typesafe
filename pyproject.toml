@@ -1,0 +1,44 @@
+[build-system]
+requires = [
+  "setuptools>=68,<81",
+  "wheel>=0.42,<1",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-typesafe"
+version = "0.1.0"
+description = "Hermes native TypeSafe System One plugin foundation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "Hermes TypeSafe maintainers" }]
+dependencies = ["typesafe-sdk>=0.7,<0.9"]
+
+[project.optional-dependencies]
+test = [
+  "build>=1,<2",
+  "pytest>=8,<9",
+  "pyyaml>=6,<7",
+  "setuptools>=68,<81",
+  "wheel>=0.42,<1",
+]
+
+[tool.setuptools]
+include-package-data = false
+packages = ["hermes_typesafe", "hermes_typesafe_broker"]
+package-dir = { hermes_typesafe = ".", hermes_typesafe_broker = "broker_src/hermes_typesafe_broker" }
+
+[tool.setuptools.package-data]
+hermes_typesafe = ["plugin.yaml", "skills/typesafe-system-one/SKILL.md"]
+hermes_typesafe_broker = ["_build_identity.py"]
+
+[tool.setuptools.exclude-package-data]
+"*" = ["__pycache__/*", "*.py[cod]"]
+
+[tool.pytest.ini_options]
+addopts = "-m 'not live'"
+markers = [
+  "live: explicit operator-authorized TypeSafe provider smoke; excluded by default",
+]
+testpaths = ["tests"]

@@ -1,0 +1,18 @@
+name: typesafe
+version: "0.1.0"
+description: "Typed TypeSafe System One decisions with bounded client/runtime; suggestion and guardrails held on this host."
+author: "Hermes TypeSafe maintainers"
+kind: standalone
+requires_env:
+  - TYPESAFE_API_KEY
+provides_tools:
+  - system_one
+provides_hooks:
+  - pre_llm_call
+python_dependencies:
+  - "typesafe-sdk>=0.7,<0.9"
+license: MIT
+homepage: "https://github.com/manjaroblack/hermes-typesafe"
+tags:
+  - typesafe
+  - typed-decisions
