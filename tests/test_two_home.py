@@ -261,7 +261,7 @@ with tempfile.TemporaryDirectory(prefix="typesafe-two-home-") as temp:
     assert wrong_home["error"]["code"] == "unavailable"
     home_token = set_hermes_home_override(home_b)
     try:
-        unscoped = handler_b(
+        unscoped_raw = handler_b(
             {
                 "state": {"label": "unscoped", "mode": "normal"},
                 "questions": {"safe": {"type": "noul", "instructions": "safe?"}},
@@ -270,6 +270,9 @@ with tempfile.TemporaryDirectory(prefix="typesafe-two-home-") as temp:
         )
     finally:
         reset_hermes_home_override(home_token)
+    if type(unscoped_raw) is not str:
+        raise TypeError("handler must return JSON string")
+    unscoped = json.loads(unscoped_raw)
     assert unscoped["error"]["code"] == "unavailable"
 
     assert runtime_a_reloaded._broker.acquire("wrong-abi", runtime_a_reloaded._broker.BUILD_SHA256, b"x" * 32) is None
