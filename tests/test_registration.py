@@ -130,7 +130,22 @@ def test_source_build_identity_is_reproducible(plugin: Any) -> None:
     assert all(char in "0123456789abcdef" for char in identity["build_sha256"])
 
 
+def test_flat_source_import_without_package_context_is_safe() -> None:
+    script = "import runpy; runpy.run_path('__init__.py', run_name='__init__')"
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(ROOT)},
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_real_namespaced_plugin_manager_loads_and_unloads_in_isolation() -> None:
+    if sys.version_info < (3, 11):
+        pytest.skip("public Hermes fixture integration requires Python >=3.11")
     fixture = Path(
         os.environ.get("HERMES_TYPESAFE_HERMES_FIXTURE", "/tmp/hermes-typesafe-public-fixture")
     )

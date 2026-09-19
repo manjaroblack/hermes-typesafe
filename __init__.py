@@ -9,11 +9,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from .build_identity import build_identity as _build_identity
-from .questions import default_settings as _default_settings
-from .questions import DEFAULT_MODEL
-from .runtime import runtime_status
-from .tool_system_one import API_KEY_ENV, SYSTEM_ONE_SCHEMA, has_api_key, system_one
+if __package__:
+    from .build_identity import build_identity as _build_identity
+    from .questions import default_settings as _default_settings
+    from .questions import DEFAULT_MODEL
+    from .runtime import runtime_status
+    from .tool_system_one import API_KEY_ENV, SYSTEM_ONE_SCHEMA, has_api_key, system_one
+else:  # pragma: no cover - pytest can collect a flat plugin root as ``__init__``
+    from build_identity import build_identity as _build_identity
+    from questions import DEFAULT_MODEL, default_settings as _default_settings
+    from runtime import runtime_status
+    from tool_system_one import API_KEY_ENV, SYSTEM_ONE_SCHEMA, has_api_key, system_one
 
 
 _CONFIG_DEFAULTS = _default_settings()
