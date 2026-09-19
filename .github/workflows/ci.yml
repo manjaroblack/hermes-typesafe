@@ -52,6 +52,7 @@ jobs:
           HERMES_KANBAN_WORKSPACES_ROOT: ""
           HERMES_TYPESAFE_HERMES_FIXTURE: /tmp/hermes-typesafe-public-fixture
           HERMES_TYPESAFE_REQUIRE_FIXTURE: "true"
+          HERMES_TYPESAFE_REQUIRE_WHEEL: "true"
         run: uv run --no-sync pytest -q tests/test_two_home.py
       - name: Run offline suite
         env:
