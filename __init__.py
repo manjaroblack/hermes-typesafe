@@ -1,7 +1,7 @@
-"""Hermes TypeSafe native plugin with typed tool and advisory routing.
+"""Hermes TypeSafe native plugin with typed tool and capability-gated hooks.
 
-Guardrails and skill suggestion remain held on the inspected host. Routing is
-an opt-in, current-message-only hint and never changes model or host state.
+The reviewed harness activates only on the complete fork capability set; the
+current host remains inert without those markers.
 """
 
 from __future__ import annotations
@@ -18,8 +18,15 @@ if __package__:
         ROUTING_POOL_NAMES,
         default_settings as _default_settings,
     )
-    from .runtime import runtime_status
-    from .route import make_routing_handler
+    from .runtime import TypeSafeRuntime, runtime_status
+    from .harness import (
+        _eligible_routing_pool,
+        make_combined_pre_llm_handler,
+        make_final_guard_handler,
+        make_pre_tool_guard_handler,
+        register_hook_checked,
+        supports_reviewed_harness,
+    )
     from .skills_adapter import HELD_UNSUPPORTED_HOST, HeldSkillsAdapter
     from .tool_system_one import (
         API_KEY_ENV,
@@ -37,8 +44,15 @@ else:  # pragma: no cover - pytest can collect a flat plugin root as ``__init__`
         ROUTING_POOL_NAMES,
         default_settings as _default_settings,
     )
-    from runtime import runtime_status
-    from route import make_routing_handler
+    from runtime import TypeSafeRuntime, runtime_status
+    from harness import (
+        _eligible_routing_pool,
+        make_combined_pre_llm_handler,
+        make_final_guard_handler,
+        make_pre_tool_guard_handler,
+        register_hook_checked,
+        supports_reviewed_harness,
+    )
     from skills_adapter import HELD_UNSUPPORTED_HOST, HeldSkillsAdapter
     from tool_system_one import (
         API_KEY_ENV,
@@ -114,7 +128,7 @@ def _read_settings(ctx: Any) -> dict[str, Any]:
             settings[key] = (
                 value
                 if type(value) is str and value in ROUTING_MODES
-                else default
+                else _CONFIG_DEFAULTS["routing.mode"]
             )
         elif key == "routing.models":
             settings[key] = _bounded_routing_models(value)
@@ -148,31 +162,57 @@ def _register_bundled_skill(ctx: Any) -> None:
 
 
 def register(ctx: Any) -> None:
-    """Register the typed tool and optional advisory hook without persistence."""
+    """Register the typed tool and capability-gated reviewed callbacks without persistence."""
 
     settings = _read_settings(ctx)
     home_identity = _capture_home_identity()
     handler = make_system_one_handler(settings, home_identity=home_identity)
     runtimes = [getattr(handler, "_typesafe_runtime", None)]
-    route_handler = None
-    on_unload = getattr(ctx, "on_unload", None)
-    if callable(on_unload) and settings.get("routing.enabled") is True and settings.get("routing.mode") != "off":
-        candidate = make_routing_handler(
-            settings,
-            home_identity=home_identity,
-            require_home_identity=True,
+    if supports_reviewed_harness(ctx):
+        harness_runtime = None
+        pre_llm_enabled = (
+            settings.get("suggestion.enabled") is True
+            or _eligible_routing_pool(settings) is not None
         )
-        if getattr(candidate, "_routing_pool", None) is not None:
-            route_handler = candidate
-            runtimes.append(getattr(candidate, "_typesafe_runtime", None))
-        else:
-            candidate_runtime = getattr(candidate, "_typesafe_runtime", None)
-            if candidate_runtime is not None:
-                candidate_runtime.close()
+        harness_settings_enabled = pre_llm_enabled or settings.get("guardrails.enabled") is True
+        if harness_settings_enabled:
+            harness_runtime = TypeSafeRuntime(
+                settings=settings,
+                home_identity=home_identity,
+                require_home_identity=True,
+            )
+            runtimes.append(harness_runtime)
+        if harness_runtime is not None and pre_llm_enabled:
+            combined = make_combined_pre_llm_handler(
+                settings,
+                snapshot_reader=getattr(ctx, "skills_snapshot", None),
+                runtime=harness_runtime,
+                home_identity=home_identity,
+                require_home_identity=True,
+            )
+            register_hook_checked(ctx, "pre_llm_call", combined)
+        if harness_runtime is not None and settings.get("guardrails.enabled") is True:
+            pre_tool = make_pre_tool_guard_handler(
+                settings,
+                runtime=harness_runtime,
+                home_identity=home_identity,
+                require_home_identity=True,
+            )
+            final = make_final_guard_handler(
+                settings,
+                runtime=harness_runtime,
+                home_identity=home_identity,
+                require_home_identity=True,
+            )
+            register_hook_checked(ctx, "pre_tool_call", pre_tool, phase="decision")
+            register_hook_checked(ctx, "transform_llm_output", final)
+    on_unload = getattr(ctx, "on_unload", None)
 
     def close_runtimes() -> None:
+        seen: set[int] = set()
         for runtime in runtimes:
-            if runtime is not None:
+            if runtime is not None and id(runtime) not in seen:
+                seen.add(id(runtime))
                 runtime.close()
 
     if callable(on_unload):
@@ -198,12 +238,9 @@ def register(ctx: Any) -> None:
             is_async=False,
             description=(
                 "Run a typed TypeSafe decision batch when the reviewed runtime is available. "
-                "Suggestion and guardrails remain held on this host."
+                "Capability-gated hooks remain inert when the fork markers are absent."
             ),
         )
-        register_hook = getattr(ctx, "register_hook", None)
-        if route_handler is not None and callable(register_hook):
-            register_hook("pre_llm_call", route_handler)
     except Exception:
         close_runtimes()
         raise

@@ -75,10 +75,18 @@ def test_rank_request_uses_only_current_message_and_verified_descriptor_content(
         "would_follow_documented_procedure",
         "prose_suffices",
     }
-    assert questions["skill"]["criteria"]["alpha"] == {
-        "description": "Alpha procedure",
-        "excerpt": "alpha excerpt",
-    }
+    assert questions["skill"]["criteria"]["alpha"] == {"description": "Alpha procedure"}
+    assert all(
+        len(criteria["description"]) <= 60
+        and set(criteria) == {"description"}
+        for criteria in questions["skill"]["criteria"].values()
+    )
+
+
+def test_rank_rejects_partial_probability_distribution() -> None:
+    partial = rank_response(probabilities={"beta": 1.0})
+
+    assert rank_shortlist(snapshot(), partial) is None
 
 
 def test_rank_shortlist_orders_probability_then_name_and_limits_to_three() -> None:
@@ -122,6 +130,21 @@ def test_rerank_winner_is_second_choice_not_highest_fit() -> None:
     )
 
 
+def test_rerank_requires_the_selected_winners_own_fit_threshold() -> None:
+    shortlist = rank_shortlist(snapshot(), rank_response())
+    assert shortlist
+    response = {
+        "answers": {
+            "skill": {"type": "choice", "choice": shortlist[0].name},
+            "fits_0": {"type": "noul", "noul": 0.299999},
+            "fits_1": {"type": "noul", "noul": 0.99},
+            "fits_2": {"type": "noul", "noul": 0.99},
+        }
+    }
+
+    assert rerank_winner(snapshot(), shortlist, response) is None
+
+
 def test_invalid_or_stale_names_fail_closed_without_a_miss_claim() -> None:
     stale = rank_response(probabilities={"not-in-roster": 1.0})
     assert rank_shortlist(snapshot(), stale) is None
@@ -150,7 +173,7 @@ def test_empty_snapshot_is_unavailable_not_an_evaluated_miss() -> None:
 
 
 def test_rank_criteria_aggregate_cap_is_checked_before_request_build() -> None:
-    descriptors = [skill_descriptor(f"skill-{index}", "d" * 512, "e" * 700) for index in range(128)]
+    descriptors = [skill_descriptor(f"skill-{index}-{'x' * 100}", "d" * 512, "e" * 700) for index in range(512)]
     bounded = make_verified_snapshot(descriptors, generation="g")
     assert bounded is not None
     with pytest.raises(ValueError):

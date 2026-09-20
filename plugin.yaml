@@ -1,6 +1,6 @@
 name: typesafe
 version: "0.1.0"
-description: "Typed TypeSafe System One decisions with bounded client/runtime; suggestion and guardrails held on this host."
+description: "Reviewed TypeSafe System One tool plus capability-gated suggestion, guardrail, final-screen, and routing hooks."
 author: "Hermes TypeSafe maintainers"
 kind: standalone
 requires_env:
@@ -9,6 +9,8 @@ provides_tools:
   - system_one
 provides_hooks:
   - pre_llm_call
+  - pre_tool_call
+  - transform_llm_output
 python_dependencies:
   - "typesafe-sdk>=0.7,<0.9"
 license: MIT

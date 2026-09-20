@@ -1,8 +1,8 @@
-"""Pure skill-ranking helpers for the held TypeSafe suggestion capability.
+"""Bounded, deterministic skill-ranking helpers for the TypeSafe harness.
 
 No function here discovers skills, reads the host filesystem, starts a worker,
-or calls TypeSafe.  Callers provide an immutable ``VerifiedSkillSnapshot`` and
-already-normalized provider answers from an explicitly reviewed future seam.
+or calls TypeSafe. Callers provide an immutable host-published snapshot and
+already-normalized provider answers from the reviewed callback seam.
 """
 
 from __future__ import annotations
@@ -16,27 +16,50 @@ from typing import Any
 try:
     from .questions import (
         SUGGESTION_EXCERPT_CHARS,
+        RANK_CHOICE_INSTRUCTIONS,
+        RANK_GATE_INSTRUCTIONS,
+        RERANK_CHOICE_INSTRUCTIONS,
+        RERANK_FIT_INSTRUCTION_TEMPLATE,
         SUGGESTION_FITS,
         SUGGESTION_GATE,
+        SUGGESTION_HIT_CONTEXT_PREFIX,
+        SUGGESTION_HIT_CONTEXT_SUFFIX,
+        SUGGESTION_MISS_CONTEXT,
+        SUGGESTION_RANK_CHOICE,
+        SUGGESTION_RANK_GATE_QUESTIONS,
+        SUGGESTION_SHORT_DESCRIPTION_CHARS,
         SUGGESTION_SHORTLIST,
+        MAX_SUGGESTION_RANK_CRITERIA_BYTES,
     )
     from .limits import MAX_STRING_BYTES
     from .skills_adapter import SkillDescriptor, VerifiedSkillSnapshot, validate_skill_name
 except ImportError:  # pragma: no cover - flat plugin import
-    from questions import SUGGESTION_EXCERPT_CHARS, SUGGESTION_FITS, SUGGESTION_GATE, SUGGESTION_SHORTLIST
+    from questions import (
+        SUGGESTION_EXCERPT_CHARS,
+        RANK_CHOICE_INSTRUCTIONS,
+        RANK_GATE_INSTRUCTIONS,
+        RERANK_CHOICE_INSTRUCTIONS,
+        RERANK_FIT_INSTRUCTION_TEMPLATE,
+        SUGGESTION_FITS,
+        SUGGESTION_GATE,
+        SUGGESTION_HIT_CONTEXT_PREFIX,
+        SUGGESTION_HIT_CONTEXT_SUFFIX,
+        SUGGESTION_MISS_CONTEXT,
+        SUGGESTION_RANK_CHOICE,
+        SUGGESTION_RANK_GATE_QUESTIONS,
+        SUGGESTION_SHORT_DESCRIPTION_CHARS,
+        SUGGESTION_SHORTLIST,
+        MAX_SUGGESTION_RANK_CRITERIA_BYTES,
+    )
     from limits import MAX_STRING_BYTES
     from skills_adapter import SkillDescriptor, VerifiedSkillSnapshot, validate_skill_name
 
-RANK_CHOICE = "skill"
-RANK_GATE_QUESTIONS = (
-    "acts_on_user_system",
-    "would_follow_documented_procedure",
-    "prose_suffices",
-)
-MISS_CONTEXT = "No skill in the roster appears relevant to this request."
-HIT_CONTEXT_PREFIX = "Relevant to the current request:"
-HIT_CONTEXT_SUFFIX = "Ignore this if it does not fit what the user actually asked for."
-MAX_RANK_CRITERIA_BYTES = 65_536
+RANK_CHOICE = SUGGESTION_RANK_CHOICE
+RANK_GATE_QUESTIONS = SUGGESTION_RANK_GATE_QUESTIONS
+MISS_CONTEXT = SUGGESTION_MISS_CONTEXT
+HIT_CONTEXT_PREFIX = SUGGESTION_HIT_CONTEXT_PREFIX
+HIT_CONTEXT_SUFFIX = SUGGESTION_HIT_CONTEXT_SUFFIX
+MAX_RANK_CRITERIA_BYTES = MAX_SUGGESTION_RANK_CRITERIA_BYTES
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,11 +105,12 @@ def _probability(value: Any) -> float | None:
     return number
 
 
-def _question_descriptor(descriptor: SkillDescriptor) -> dict[str, str]:
-    return {
-        "description": descriptor.description,
-        "excerpt": descriptor.excerpt[:SUGGESTION_EXCERPT_CHARS],
-    }
+def _question_descriptor(descriptor: SkillDescriptor, *, include_excerpt: bool) -> dict[str, str]:
+    result = {"description": descriptor.description[:SUGGESTION_SHORT_DESCRIPTION_CHARS]}
+    if include_excerpt:
+        result["description"] = descriptor.description
+        result["excerpt"] = descriptor.excerpt[:SUGGESTION_EXCERPT_CHARS]
+    return result
 
 
 def _snapshot_names(snapshot: VerifiedSkillSnapshot) -> set[str]:
@@ -108,27 +132,30 @@ def build_rank_questions(snapshot: VerifiedSkillSnapshot) -> dict[str, dict[str,
 
     if not _valid_snapshot(snapshot) or len(snapshot.skills) == 0:
         raise ValueError("a non-empty verified snapshot is required")
-    criteria = {descriptor.name: _question_descriptor(descriptor) for descriptor in snapshot.skills}
+    criteria = {
+        descriptor.name: _question_descriptor(descriptor, include_excerpt=False)
+        for descriptor in snapshot.skills
+    }
     criteria_bytes = json.dumps(criteria, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode("ascii")
     if len(criteria_bytes) > MAX_RANK_CRITERIA_BYTES:
         raise ValueError("rank criteria exceeds its bounded cap")
     return {
         RANK_CHOICE: {
             "type": "choice",
-            "instructions": "Which documented skill best matches the current request?",
+            "instructions": RANK_CHOICE_INSTRUCTIONS,
             "criteria": criteria,
         },
         "acts_on_user_system": {
             "type": "noul",
-            "instructions": "Does the request ask the agent to use or operate a system?",
+            "instructions": RANK_GATE_INSTRUCTIONS["acts_on_user_system"],
         },
         "would_follow_documented_procedure": {
             "type": "noul",
-            "instructions": "Would following one of these documented procedures help answer the request?",
+            "instructions": RANK_GATE_INSTRUCTIONS["would_follow_documented_procedure"],
         },
         "prose_suffices": {
             "type": "noul",
-            "instructions": "Would ordinary prose answer the request without a documented skill?",
+            "instructions": RANK_GATE_INSTRUCTIONS["prose_suffices"],
         },
     }
 
@@ -153,14 +180,17 @@ def build_rerank_questions(
     questions: dict[str, dict[str, Any]] = {
         RANK_CHOICE: {
             "type": "choice",
-            "instructions": "Which shortlisted skill best fits the current request?",
-            "criteria": {descriptor.name: _question_descriptor(descriptor) for descriptor in candidates},
+            "instructions": RERANK_CHOICE_INSTRUCTIONS,
+            "criteria": {
+                descriptor.name: _question_descriptor(descriptor, include_excerpt=True)
+                for descriptor in candidates
+            },
         }
     }
     for index, descriptor in enumerate(candidates):
         questions[f"fits_{index}"] = {
             "type": "noul",
-            "instructions": f"Would the user follow the documented {descriptor.name} procedure for this request?",
+            "instructions": RERANK_FIT_INSTRUCTION_TEMPLATE.format(skill_name=descriptor.name),
         }
     return questions
 
@@ -220,7 +250,7 @@ def _rank_outcome(snapshot: VerifiedSkillSnapshot, response: Any) -> _RankOutcom
         if number is None:
             return _RankOutcome(False, False, ())
         scores[name] = number
-    if selected not in scores:
+    if selected not in scores or set(scores) != roster:
         return _RankOutcome(False, False, ())
     ordered = sorted(snapshot.skills, key=lambda descriptor: (-scores.get(descriptor.name, 0.0), descriptor.name))
     shortlist = tuple(ordered[: min(SUGGESTION_SHORTLIST, len(ordered))])
@@ -272,7 +302,9 @@ def _rerank_outcome(
         if value is None:
             return _RerankOutcome(False, False, None)
         fits.append(value)
-    return _RerankOutcome(True, max(fits) < SUGGESTION_FITS, None if max(fits) < SUGGESTION_FITS else winner)
+    winner_index = next(index for index, descriptor in enumerate(candidates) if descriptor.name == winner)
+    winner_fit = fits[winner_index]
+    return _RerankOutcome(True, winner_fit < SUGGESTION_FITS, None if winner_fit < SUGGESTION_FITS else winner)
 
 
 def rerank_winner(

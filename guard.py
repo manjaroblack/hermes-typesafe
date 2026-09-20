@@ -1,8 +1,8 @@
 """Pure synthetic guardrail helpers.
 
-The current Hermes host cannot provide an atomic guard hook.  This module is
-therefore deliberately side-effect free: it performs no SDK, approval-store,
-dispatch, callback registration, logging, persistence, or network work.
+This module is side-effect free: the reviewed host integration in ``harness.py``
+owns callbacks, runtime admission, and native approval; these helpers only
+validate bounded data and classify detached answers.
 """
 
 from __future__ import annotations
@@ -11,6 +11,8 @@ import hashlib
 import json
 import math
 import secrets
+from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,8 +31,16 @@ try:  # Native source checkout and installed wheel both use this module.
         GUARD_MIN,
         GUARD_MESSAGES,
         GUARD_MEDIUM,
+        GUARD_OWN_TOOL_NAME,
+        MAX_GUARD_IDENTIFIER_BYTES,
+        MAX_GUARD_SCOPE_BYTES,
+        GUARD_RULE_PREFIX,
+        GUARD_RULE_VERSION,
         GUARD_QUESTIONS,
         GUARD_STATIC_SAFE_FINAL_REPLACEMENT,
+        GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX,
+        FINAL_GUARD_QUESTIONS,
+        SENSITIVE_ARGUMENT_KEYS,
         resolve_guard_thresholds,
     )
 except ImportError:  # pragma: no cover - flat source collection
@@ -43,17 +53,25 @@ except ImportError:  # pragma: no cover - flat source collection
         GUARD_MIN,
         GUARD_MESSAGES,
         GUARD_MEDIUM,
+        GUARD_OWN_TOOL_NAME,
+        MAX_GUARD_IDENTIFIER_BYTES,
+        MAX_GUARD_SCOPE_BYTES,
+        GUARD_RULE_PREFIX,
+        GUARD_RULE_VERSION,
         GUARD_QUESTIONS,
         GUARD_STATIC_SAFE_FINAL_REPLACEMENT,
+        GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX,
+        FINAL_GUARD_QUESTIONS,
+        SENSITIVE_ARGUMENT_KEYS,
         resolve_guard_thresholds,
     )
 
 
-_SCOPE_BYTES = 32
-_ID_BYTES = 128
-_OWN_TOOL = "system_one"
-_RULE_VERSION = "typesafe-approval-v3"
-_RULE_PREFIX = "typesafe.guardrails.v3."
+_SCOPE_BYTES = MAX_GUARD_SCOPE_BYTES
+_ID_BYTES = MAX_GUARD_IDENTIFIER_BYTES
+_OWN_TOOL = GUARD_OWN_TOOL_NAME
+_RULE_VERSION = GUARD_RULE_VERSION
+_RULE_PREFIX = GUARD_RULE_PREFIX
 
 STATIC_SAFE_FINAL_REPLACEMENT = GUARD_STATIC_SAFE_FINAL_REPLACEMENT
 FINAL_WARNING_PREFIX = GUARD_FINAL_WARNING_PREFIX
@@ -174,13 +192,56 @@ def _validate_identifier(value: Any, code: str) -> str:
 def _validate_args(args: Any) -> bytes:
     """Return canonical bounded bytes for an exact JSON object only."""
 
-    if type(args) is not dict:
+    if not isinstance(args, Mapping):
         raise GuardInputError("args_invalid")
     try:
-        return _validate_and_encode(args, cap=MAX_STATE_BYTES, code="payload_too_large")
+        return _validate_and_encode(_detach_json(args), cap=MAX_STATE_BYTES, code="payload_too_large")
     except LimitsError as error:
         del error
         raise GuardInputError("args_invalid") from None
+
+
+def _detach_json(value: Any) -> Any:
+    """Copy host-frozen JSON projections into the bounded native JSON types."""
+
+    if isinstance(value, Mapping):
+        return {key: _detach_json(item) for key, item in value.items()}
+    if type(value) is list:
+        return [_detach_json(item) for item in value]
+    if type(value) is tuple:
+        return [_detach_json(item) for item in value]
+    return value
+
+
+def contains_sensitive_argument_key(args: Any) -> bool:
+    """Detect only sensitive mapping keys; arbitrary string values are not scanned."""
+
+    if not isinstance(args, Mapping):
+        return False
+    try:
+        for key, value in args.items():
+            if type(key) is str and key.casefold() in SENSITIVE_ARGUMENT_KEYS:
+                return True
+            if isinstance(value, Mapping) and contains_sensitive_argument_key(value):
+                return True
+            if type(value) in (list, tuple) and any(contains_sensitive_argument_key(item) for item in value):
+                return True
+    except Exception:
+        return True
+    return False
+
+
+def build_tool_guard_request(tool_name: Any, args: Any) -> tuple[dict[str, Any], dict[str, dict[str, Any]]] | None:
+    """Build the exact proposed tool I/O batch, or ``None`` for the plugin's own tool."""
+
+    if type(tool_name) is not str or not tool_name or tool_name == _OWN_TOOL:
+        return None
+    _validate_identifier(tool_name, "tool_name_invalid")
+    if contains_sensitive_argument_key(args):
+        raise GuardInputError("sensitive_argument")
+    checked_args = _detach_json(args)
+    _validate_args(checked_args)
+    return {"tool_name": tool_name, "args": checked_args}, deepcopy(GUARD_QUESTIONS)
 
 
 def _validate_check(check: Any) -> str:
@@ -232,7 +293,7 @@ def make_rule_key(
 
 
 def _normalise_results(results: Any) -> tuple[list[tuple[str, float]] | None, bool]:
-    """Read only known answer fields and validate every known supplied score."""
+    """Require exactly one valid score for every configured guard check."""
 
     if type(results) is not dict:
         return None, False
@@ -241,12 +302,12 @@ def _normalise_results(results: Any) -> tuple[list[tuple[str, float]] | None, bo
         raw_answers = results["answers"]
     if type(raw_answers) is not dict:
         return None, False
+    if set(raw_answers) != set(GUARD_CHECKS):
+        return None, False
 
     values: list[tuple[str, float]] = []
     invalid = False
     for check in GUARD_CHECKS:
-        if check not in raw_answers:
-            continue
         raw = raw_answers[check]
         if type(raw) is dict:
             if raw.get("type") != "noul" or "noul" not in raw:
@@ -308,10 +369,11 @@ def classify_results(
     tool_name: Any = None,
     medium: Any = GUARD_MEDIUM,
     high: Any = GUARD_HIGH,
+    questions: Mapping[str, Any] = GUARD_QUESTIONS,
 ) -> GuardAssessment:
     """Classify explicit synthetic answers without contacting any service."""
 
-    del tool_name
+    del tool_name, questions
     thresholds, valid_thresholds = resolve_guard_thresholds(medium=medium, high=high)
     diagnostic = None if valid_thresholds else "invalid_thresholds"
     values, valid_results = _normalise_results(results)
@@ -441,9 +503,14 @@ def represent_final_text(
     try:
         text = _validate_final_text(response_text)
     except GuardInputError:
-        return FinalRepresentation(action="unavailable", text="", severity="unavailable", reason="invalid_response")
+        return FinalRepresentation(
+            action="unavailable",
+            text=GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX,
+            severity="unavailable",
+            reason="invalid_response",
+        )
 
-    assessment = classify_results(results, medium=medium, high=high)
+    assessment = classify_results(results, medium=medium, high=high, questions=FINAL_GUARD_QUESTIONS)
     if assessment.action == "block":
         return FinalRepresentation(
             action="replace",
@@ -470,7 +537,7 @@ def represent_final_text(
         )
     return FinalRepresentation(
         action="unavailable",
-        text=text,
+        text=f"{GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX}\n{text}",
         severity=assessment.severity,
         check=assessment.check,
         reason=assessment.reason,
@@ -495,8 +562,10 @@ __all__ = [
     "FinalRepresentation",
     "STATIC_SAFE_FINAL_REPLACEMENT",
     "build_rule_key",
+    "build_tool_guard_request",
     "classify_guard_results",
     "classify_results",
+    "contains_sensitive_argument_key",
     "evaluate_tool_arguments",
     "make_rule_key",
     "new_plugin_instance_scope",

@@ -8,7 +8,8 @@
 - Design SHA-256: `9b756899689d6d31f31bb7f5d56c80696e75e3cbdd0a37e6d74d735c25020147`
 - Independent security A3: `SECURITY_DESIGN_PASS_FOR_B3_REVIEW`, report SHA-256 `50acd1eb584a01e1554adaa45371838fde70b6f0444dd71aaf996302e32f1c2d`
 - Independent B3: `GO`, `implementation_authorized=true`, ACMD01-06 only, bound to the exact v3 design hash.
-- Public Hermes fixture: `NousResearch/hermes-agent@ee4452991d17534aa561f31ee55596d082aa94e7`; live Hermes was not edited.
+- Negative public Hermes fixture: `NousResearch/hermes-agent@ee4452991d17534aa561f31ee55596d082aa94e7`.
+- Positive reviewed Hermes fixture: `manjaroblack/hermes-agent@b38c2858107e9d63f98c1d3a86bd00933fbd0661`; live Hermes was not edited.
 
 ## Foundation choices
 
@@ -36,10 +37,10 @@
    `core.py` bytes. Native copy-only installation without the matching wheel is
    documented as a later runtime prerequisite, not silently repaired.
 
-9. H retains the held suggestion and guard boundaries while adding hint-only
-   routing and the canonical installed broker. The broker is imported only as
-   `hermes_typesafe_broker.core` after provenance, ABI, build identity,
-   interpreter, lifecycle, and home checks.
+9. H activates the reviewed suggestion, guard, final-screen, and model-switch
+   callbacks only behind all three public capability markers. Unsupported hosts
+   retain `HELD_UNSUPPORTED_HOST`; the plugin never downgrades a real switch to
+   an advisory hint.
 10. H packaging is one distribution: native plugin modules map to
     `hermes_typesafe`, broker sources map to `hermes_typesafe_broker`, and both
     generated identity files must match the same ABI and source digest.
@@ -65,26 +66,34 @@ phase-limited status statements with the following cumulative boundary:
 - The public fixture is pinned to
   `ee4452991d17534aa561f31ee55596d082aa94e7`; every temporary home is isolated
   from inherited Hermes/Kanban environment overrides.
-- Suggestion and guardrails are `HELD_UNSUPPORTED_HOST`. Pure helper fixtures
-  and zero-registration proofs do not satisfy their original live ACs or make
-  this candidate catalog-eligible.
+- Suggestion and guardrails activate only when the host advertises all three
+  reviewed capability markers. Pure helper fixtures remain offline evidence;
+  a missing marker set is still `HELD_UNSUPPORTED_HOST` and registers no
+  harness callback.
 - Runtime success requires canonical installed broker ownership. Missing,
   shadowed, mismatched, unsupported, or wrong-home seams fail closed without a
   per-profile broker fallback.
 
-## Held capabilities
+## Capability-gated harness
 
-- Suggestion is `HELD_UNSUPPORTED_HOST`: no snapshot producer, roster crawl,
-  cache, scanner, worker, or suggestion RPC exists in C.
-- Guardrails are `HELD_UNSUPPORTED_HOST`: no `pre_tool_call` or
-  `transform_llm_output` callback, approval-store call, high-block claim,
-  medium-approval claim, or final-output replacement exists in C. The future
-  composed-hook matrix is `DEFERRED_HOST_CAPABILITY`, not a passing test.
-- Routing is default-off and not registered in C; later routing remains a hint
-  only and cannot switch models or mutate cache/config.
-- Future streaming, owner override, outage, and cancellation behavior must be
-  proven at the host/runtime seam. A disclaimer is not a substitute for that
-  proof.
+- The complete marker set is `pre_llm_call.model_switch.v1`,
+  `pre_tool_call.decision.v1`, and `skills.snapshot.v1`. Registration also
+  requires a current immutable snapshot reader and phase-aware hook seam.
+- One combined pre-LLM callback owns routing plus two-stage suggestion; one
+  decision-phase pre-tool callback owns tool screening; one final transform
+  owns completed-output screening. Feature flags never create a second hook.
+- Routing returns only a locally configured `{model, provider}` host directive.
+  First-turn directives cannot break cache; later cache-break directives require
+  every gate. Missing, malformed, stale, or unavailable inputs fail closed.
+- Guard medium results use the host's native approval/binding path. Sensitive
+  argument keys are blocked before upload, the plugin's own tool is skipped,
+  and provider/key/broker/deadline failures block. Final unavailable results
+  use a static prefix and never retract streaming output.
+- Completed-output transforms follow the reviewed host's first-nonempty-string
+  precedence: an earlier replacement result wins over TypeSafe, while a
+  TypeSafe result wins over later replacement results. The host may still invoke
+  every callback for observation; no fourth result hook or streaming retraction
+  is introduced.
 
 ## Human gates and rollback
 

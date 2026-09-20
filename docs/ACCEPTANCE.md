@@ -1,26 +1,20 @@
 # Acceptance
 
-Scope: H cumulative integration from the exact reviewed G ancestor. A passing
-row records this repository's offline or isolated evidence; held capabilities
-remain held and are never counted as original feature completion.
+Scope: reviewed TypeSafe harness activation on the approved fork capability seam.
+Unsupported hosts remain inert; keyless/default CI never claims provider success.
 
-| ID | Contract | Evidence/status |
+| ID | Contract | Evidence |
 | --- | --- | --- |
-| AC01 | Missing/blank `TYPESAFE_API_KEY` is false; an ambient environment key is ignored; a scoped synthetic key exposes one mixed `noul`/`choice`/`score` schema. | `tests/test_registration.py`; default suite. |
-| AC02 | One bounded mixed batch reaches the mocked SDK once; normalized model/answers/usage and sanitized fail-closed errors are returned. | `tests/test_client.py`, `tests/test_system_one.py`; default suite. |
-| AC03R3 | Suggestion remains `HELD_UNSUPPORTED_HOST`: no production hook, roster scan, cache, worker, or RPC. Pure verified-snapshot/ranking fixtures are separately tested. | `tests/test_plugin_integration.py`, `tests/test_suggest.py`, `tests/test_skills_adapter.py`; original live-suggestion AC is held. |
-| AC04R3 | Guard helpers are pure fixtures only; native registration exposes zero `pre_tool_call`/`transform_llm_output` callbacks, SDK calls, approval calls, and final-screen access. | `tests/test_guard.py`, `tests/test_plugin_integration.py`; original live guard AC is held. |
-| AC05 | Hook work is bounded to two seconds; tools to 120 seconds; canonical broker admits four operations globally, uses one loop thread, keeps cancelled slots charged, and bounds reload/shutdown state. | `tests/test_runtime.py`, `tests/test_broker.py`, installed two-home lane. |
-| AC06 | Routing is default-off, empty/invalid pools no-op, first-turn/high gates are enforced, and output is a current-message-only hint with no switch/config/cache/provider mutation. | `tests/test_route.py`, `tests/test_plugin_integration.py`; default suite. |
-| AC07 | `questions.py` is the sole production home for built-in questions, rubrics, and thresholds; settings are detached, validated, and read-only. | `tests/test_registration.py`, `tests/test_guard.py`; default suite. |
-| AC08R3 | Wheel/sdist carry explicit root and canonical broker assets. The installed wheel is copied into two temporary homes and loaded by the pinned immutable public `PluginManager`/registry. | `tests/test_packaging.py`, `tests/test_plugin_integration.py`, `tests/test_two_home.py`; Python 3.12 isolated lane. |
-| AC09 | Bundled original skill has the compact period-terminated description, required sections, pinned tool/key/privacy contract, and qualified `typesafe:typesafe-system-one` discovery. | `tests/test_skill_contract.py`, `tests/test_plugin_integration.py`; default/public fixture lanes. |
-| AC10 | No Hermes core edits; H remains on the approved G head lineage, uses a private cumulative feature PR, and leaves merge/deploy/tag/catalog decisions to human gates. | Git/PR/CI handoff; same-card independent review required. |
-| AC11 | Default pytest/CI is keyless, socket-denied, provider-mocked, and excludes `live`; optional live results are separate and redacted. | `pyproject.toml`, CI workflow, registration adversarial key test, default suite. |
-| AC12R3 | README/manifest/docs state wheel prerequisite, enable/env/flags, fail-open experimental routing, streaming limits, hint-only gap, held capabilities, and rollback. | `README.md`, `plugin.yaml`, `DECISIONS.md`, `THREAT-MODEL.md`; documented. |
-| AC13 | Numeric limits reject exact one-over cases before SDK construction, broker admission, or wire transport. | `tests/test_limits.py`, `tests/test_client.py`; default suite. |
-| AC14 | Unknown callback kwargs, ambient host `ContextVar`s, history/system/results, and secret markers are not inspected, retained, outbound, or logged. | projection/privacy tests across client, route, registration, and two-home lanes. |
-| AC15 | Canonical installed broker identity/ABI is matched across native and broker generated files; missing, shadowed, mismatched, unsupported, or wrong-home runtime is unavailable rather than duplicated. | `tests/test_packaging.py`, `tests/test_runtime.py`, `tests/test_two_home.py`; isolated lane. |
+| AC01 | Missing/blank scoped `TYPESAFE_API_KEY` is unavailable; ambient environment keys are ignored; `system_one` remains one bounded mixed batch. | `tests/test_registration.py`, `tests/test_system_one.py` |
+| AC02 | Complete fork markers activate one combined `pre_llm_call`, one decision-phase `pre_tool_call`, and one `transform_llm_output`; missing markers activate zero harness callbacks. | `tests/test_harness_integration.py`, `tests/test_reviewed_harness_integration.py` |
+| AC03 | All flags default off (`routing.mode=off`, empty pool); unsupported and all-off paths do not create harness requests. | `tests/test_harness_integration.py`, `tests/test_plugin_integration.py` |
+| AC04 | Snapshot ranking uses only the current user and immutable current generation; first criteria omit excerpts, rerank uses bounded excerpts, stale/oversized/malformed input fails open. | `tests/test_suggest.py`, `tests/test_harness_callbacks.py`, `tests/test_skills_adapter.py` |
+| AC05 | Tool guard sends exact `{tool_name,args}` only; own-tool and sensitive-key paths never upload; low passes, medium returns native approval, high/unavailable blocks. | `tests/test_guard.py`, `tests/test_harness_callbacks.py`, `tests/test_reviewed_harness_integration.py` |
+| AC06 | Final screen uses final-specific rubrics and bounded `response_text` only; high replaces, medium warns, low preserves, unavailable prefixes the original, and the host's first nonempty transform wins without streaming retraction. | `tests/test_guard.py`, `tests/test_harness_callbacks.py`, `tests/test_reviewed_harness_integration.py` |
+| AC07 | Routing resolves local `{model,provider}` identities and returns a host-applied model-switch directive only after mode-specific closed-pool gates; first-turn routing does not require cache-break worth, while later routing does. | `tests/test_route.py`, `tests/test_harness_callbacks.py`, `tests/test_reviewed_harness_integration.py` |
+| AC08 | Bundled skill documents seven explicit recipes with canonical offline schemas/examples: intent-before-expensive-tools, rerank, citation check, spawn-or-not, cron-worth-it, kanban class, memory-worthiness. | `questions.py`, `skills/typesafe-system-one/SKILL.md`, `tests/test_recipe_contract.py` |
+| AC09 | `questions.py` is the production policy home for questions, rubrics, thresholds, deadlines, and harness limits; feature modules import those values. | `tests/test_registration.py`, `tests/test_limits.py` |
+| AC10 | Wheel/sdist include the plugin, harness, bundled skill, and canonical broker assets; no Hermes core files are changed. | `tests/test_packaging.py`, `uv build --wheel --sdist`, Git diff |
 
 ## Verification matrix
 
@@ -32,18 +26,20 @@ python -m compileall -q .
 uv build --wheel --sdist
 ```
 
-The required installed acceptance uses CPython 3.12, the immutable public
-fixture `NousResearch/hermes-agent@ee4452991d17534aa561f31ee55596d082aa94e7`,
-a temporary two-home `HERMES_HOME`, a wheel installed outside the checkout,
-and `pytest -q tests/test_two_home.py`. Dependency setup may use the network;
-provider tests use mocks and deny inference sockets. A skipped optional live
-lane is not provider success.
+The committed isolated core proof pins exact approved fork head
+`b38c2858107e9d63f98c1d3a86bd00933fbd0661`. It uses the real PluginManager,
+tool dispatch/approval boundary, and finalizer to verify all three hooks,
+decision-phase binding, mode-specific routing, fail-closed tool outcomes, and
+first-nonempty transform precedence. The older public fixture remains the
+unsupported-host lane. No paid inference, live install, merge, deploy, or core
+edit is part of this task.
 
-## Not accepted by H
+## Safety boundary
 
-- TypeSafe inference or authentication against the provider in default CI.
-- Live skill suggestion, roster/snapshot access, or catalog eligibility.
-- Guardrail callbacks, Hermes approval, final-output screening, or streaming safety.
-- Actual model switching, cache mutation, host config mutation, core changes,
-  live installation, merge, deployment, visibility changes, release tags, or
-  catalog submission.
+- Scoped secret only; no ambient environment fallback or raw body logging.
+- Hook state is detached and allowlisted; history, system prompts, traces, tool
+  registries, and host context variables never enter TypeSafe request state.
+- Timeouts, RPC counts, snapshots, roster criteria, JSON depth/nodes, and request
+  sizes are centralized and fail closed at exact bounds.
+- Unsupported capability sets retain the `HELD_UNSUPPORTED_HOST` fallback and do
+  not present advisory output as a real model switch or loaded skill.

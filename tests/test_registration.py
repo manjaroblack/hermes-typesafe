@@ -16,6 +16,8 @@ from conftest import ROOT
 
 PUBLIC_HERMES_SHA = "ee4452991d17534aa561f31ee55596d082aa94e7"
 PUBLIC_HERMES_FIXTURE = "/tmp/hermes-typesafe-public-fixture"
+REVIEWED_HERMES_SHA = "b38c2858107e9d63f98c1d3a86bd00933fbd0661"
+REVIEWED_HERMES_FIXTURE = "/tmp/hermes-typesafe-reviewed-fixture"
 
 
 @pytest.mark.usefixtures("plugin")
@@ -29,8 +31,8 @@ def test_manifest_declares_only_the_registered_tool_and_required_secret() -> Non
     assert "system_one" in manifest
     assert "provides_hooks:" in manifest
     assert "pre_llm_call" in manifest
-    assert "pre_tool_call" not in manifest
-    assert "transform_llm_output" not in manifest
+    assert "pre_tool_call" in manifest
+    assert "transform_llm_output" in manifest
     assert "capabilities:" not in manifest
 
 
@@ -158,7 +160,7 @@ def test_default_settings_are_inert_and_centralized_in_questions(plugin: Any) ->
         "suggestion.enabled": False,
         "guardrails.enabled": False,
         "routing.enabled": False,
-        "routing.mode": "first_turn",
+        "routing.mode": "off",
         "routing.models": {},
     }
     assert plugin.questions.GUARD_HIGH == 0.80
@@ -236,7 +238,7 @@ def test_flat_source_import_without_package_context_is_safe() -> None:
     assert result.returncode == 0, result.stderr
 
 
-def test_ci_pins_and_requires_public_hermes_fixture_on_python_312() -> None:
+def test_ci_pins_and_requires_both_hermes_fixtures_on_python_312() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     assert PUBLIC_HERMES_SHA in workflow
@@ -248,6 +250,12 @@ def test_ci_pins_and_requires_public_hermes_fixture_on_python_312() -> None:
     assert "Build candidate wheel for installed integration" in workflow
     assert "Install candidate wheel" in workflow
     assert "tests/test_two_home.py" in workflow
+    assert REVIEWED_HERMES_SHA in workflow
+    assert "Fetch immutable reviewed Hermes integration fixture" in workflow
+    assert f"git init {REVIEWED_HERMES_FIXTURE}" in workflow
+    assert f"HERMES_TYPESAFE_REVIEWED_FIXTURE: {REVIEWED_HERMES_FIXTURE}" in workflow
+    assert "HERMES_TYPESAFE_REQUIRE_REVIEWED_FIXTURE:" in workflow
+    assert "tests/test_reviewed_harness_integration.py" in workflow
     assert "uv run --no-sync pytest -q" in workflow
 
 

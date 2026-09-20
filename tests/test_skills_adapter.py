@@ -230,7 +230,7 @@ def test_descriptor_text_and_snapshot_caps_fail_closed(tmp_path: Path) -> None:
     )
     assert read_verified_descriptor(root, "skills/demo/SKILL.md", expected_name="demo") is None
 
-    descriptors = [skill_descriptor(f"skill-{index}", "x" * 512, "x" * 700) for index in range(128)]
+    descriptors = [skill_descriptor(f"skill-{index}", "x" * 512, "x" * 700) for index in range(512)]
     assert make_verified_snapshot(descriptors, generation="g") is not None
     assert make_verified_snapshot(descriptors + [skill_descriptor("overflow", "d")], generation="g") is None
 

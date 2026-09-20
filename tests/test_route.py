@@ -77,18 +77,48 @@ def test_routing_questions_are_one_typed_batch_with_configured_labels() -> None:
     assert len(questions[ROUTING_DIFFICULTY]["criteria"]) == 4
 
 
-@pytest.mark.parametrize(
-    "field",
-    ["mismatch", "worth", "confidence"],
-)
-def test_each_switch_gate_is_inclusive_and_difficulty_never_overrides(field: str) -> None:
-    passing = evaluate_routing(response(difficulty=0), POOL, current_model="jev-cheap")
+@pytest.mark.parametrize("field", ["mismatch", "confidence"])
+def test_shared_switch_gates_are_inclusive_and_difficulty_never_overrides(field: str) -> None:
+    passing = evaluate_routing(
+        response(difficulty=0),
+        POOL,
+        current_model="jev-cheap",
+        mode="first_turn",
+    )
     assert passing is not None and passing.switch_worthy is True
 
     below = {"mismatch": 0.8, "worth": 0.8, "confidence": 0.8}
     below[field] = 0.799999
-    decision = evaluate_routing(response(difficulty=3, **below), POOL, current_model="jev-cheap")
+    decision = evaluate_routing(
+        response(
+            mismatch=below["mismatch"],
+            worth=below["worth"],
+            confidence=below["confidence"],
+            difficulty=3,
+        ),
+        POOL,
+        current_model="jev-cheap",
+        mode="first_turn",
+    )
     assert decision is not None and decision.switch_worthy is False
+
+
+def test_cache_worth_is_required_only_for_later_turn_routing() -> None:
+    first_turn = evaluate_routing(
+        response(worth=0.1),
+        POOL,
+        current_model="jev-cheap",
+        mode="first_turn",
+    )
+    later_turn = evaluate_routing(
+        response(worth=0.1),
+        POOL,
+        current_model="jev-cheap",
+        mode="cache_break_if_worth_it",
+    )
+
+    assert first_turn is not None and first_turn.switch_worthy is True
+    assert later_turn is not None and later_turn.switch_worthy is False
 
 
 def test_current_unknown_and_duplicate_model_identity_never_claim_switch() -> None:
@@ -104,6 +134,11 @@ def test_current_unknown_and_duplicate_model_identity_never_claim_switch() -> No
     }
     duplicate = evaluate_routing(response(), duplicate_pool, current_model="jev-shared")
     assert duplicate is not None and duplicate.switch_worthy is False
+
+    provider_resolved = evaluate_routing(
+        response(), duplicate_pool, current_model="jev-shared", current_provider="provider-a"
+    )
+    assert provider_resolved is not None and provider_resolved.switch_worthy is True
 
     unknown_current = evaluate_routing(response(), POOL, current_model="not-configured")
     assert unknown_current is not None and unknown_current.switch_worthy is False
@@ -227,7 +262,7 @@ def test_handler_stops_before_runtime_when_absolute_budget_is_expired() -> None:
     assert runtime.calls == []
 
 
-def test_cache_break_mode_logs_hypothetical_only_after_all_gates(caplog: pytest.LogCaptureFixture) -> None:
+def test_advisory_compatibility_handler_never_claims_a_switch(caplog: pytest.LogCaptureFixture) -> None:
     runtime = FakeRuntime(response())
     handler = make_routing_handler(
         enabled_settings(mode="cache_break_if_worth_it"),
@@ -239,7 +274,7 @@ def test_cache_break_mode_logs_hypothetical_only_after_all_gates(caplog: pytest.
     with caplog.at_level(logging.INFO):
         result = handler(user_message="x", is_first_turn=False, model="jev-cheap")
     assert result == format_routing_hint("coding")
-    assert "would have switched" in caplog.text
+    assert "would have switched" not in caplog.text
 
     caplog.clear()
     runtime.result = response(worth=0.799999)

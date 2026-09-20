@@ -28,6 +28,12 @@ def all_scores(value: float = 0.0) -> dict[str, Any]:
     return answers(**{check: value for check in GUARD_CHECKS})
 
 
+def complete_scores(value: float = 0.0, **overrides: float) -> dict[str, Any]:
+    scores = {check: value for check in GUARD_CHECKS}
+    scores.update(overrides)
+    return answers(**scores)
+
+
 def test_questions_are_the_single_guard_policy_home() -> None:
     assert GUARD_CHECKS == (
         "jailbreak_injection",
@@ -59,7 +65,10 @@ def test_highest_severity_wins_with_fixed_check_tie_order_and_static_message() -
 
 
 def test_medium_boundary_is_approve_and_low_is_pass() -> None:
-    medium = guard.classify_results(answers(credential_exfiltration=GUARD_MEDIUM), tool_name="send")
+    medium = guard.classify_results(
+        complete_scores(credential_exfiltration=GUARD_MEDIUM),
+        tool_name="send",
+    )
     low = guard.classify_results(all_scores(math.nextafter(GUARD_MEDIUM, 0.0)), tool_name="send")
 
     assert medium.action == "approve"
@@ -72,13 +81,13 @@ def test_medium_boundary_is_approve_and_low_is_pass() -> None:
 
 def test_valid_custom_thresholds_apply_without_moving_policy_home() -> None:
     medium = guard.classify_results(
-        answers(credential_exfiltration=0.6),
+        complete_scores(credential_exfiltration=0.6),
         tool_name="send",
         medium=0.6,
         high=0.9,
     )
     high = guard.classify_results(
-        answers(credential_exfiltration=0.9),
+        complete_scores(credential_exfiltration=0.9),
         tool_name="send",
         medium=0.6,
         high=0.9,
@@ -92,7 +101,7 @@ def test_valid_custom_thresholds_apply_without_moving_policy_home() -> None:
 
 def test_invalid_thresholds_fall_back_to_central_defaults_without_raw_diagnostic() -> None:
     result = guard.classify_results(
-        answers(jailbreak_injection=0.75),
+        complete_scores(jailbreak_injection=0.75),
         tool_name="send",
         medium=float("nan"),
         high=0.5,
@@ -104,13 +113,41 @@ def test_invalid_thresholds_fall_back_to_central_defaults_without_raw_diagnostic
     assert "nan" not in result.message.lower()
 
 
-@pytest.mark.parametrize("bad", [None, {}, {"answers": {}}, answers(jailbreak_injection=math.nan), answers(jailbreak_injection=1.1)])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        None,
+        {},
+        {"answers": {}},
+        complete_scores(jailbreak_injection=math.nan),
+        complete_scores(jailbreak_injection=1.1),
+    ],
+)
 def test_malformed_or_nonfinite_results_are_unavailable(bad: Any) -> None:
     result = guard.classify_results(bad, tool_name="send")
 
     assert result.action == "unavailable"
     assert result.severity == "unavailable"
     assert result.rule_key is None
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        answers(credential_exfiltration=GUARD_MEDIUM),
+        {
+            "answers": {
+                **complete_scores()["answers"],
+                "unexpected_check": {"type": "noul", "noul": 0.0},
+            }
+        },
+    ],
+)
+def test_missing_or_extra_guard_checks_are_unavailable(result: dict[str, Any]) -> None:
+    assessment = guard.classify_results(result, tool_name="send")
+
+    assert assessment.action == "unavailable"
+    assert assessment.reason == "invalid_results"
 
 
 def test_own_system_one_is_skipped_before_args_or_answer_validation() -> None:
@@ -133,7 +170,7 @@ def test_medium_missing_identity_refuses_without_stable_rule_key_or_echo() -> No
     result = guard.evaluate_tool_arguments(
         tool_name="send",
         args={"credential": sentinel},
-        results=answers(credential_exfiltration=0.5),
+        results=complete_scores(credential_exfiltration=0.5),
         session_id=None,
         tool_call_id=None,
         plugin_instance_scope=guard.new_plugin_instance_scope(),
@@ -184,7 +221,7 @@ def test_medium_tool_result_binds_rule_key_only_after_full_identity_validation()
     result = guard.evaluate_tool_arguments(
         tool_name="send",
         args={"recipient": "example"},
-        results=answers(credential_exfiltration=0.5),
+        results=complete_scores(credential_exfiltration=0.5),
         session_id="session-1",
         tool_call_id="call-1",
         plugin_instance_scope="02" * 32,
@@ -198,7 +235,7 @@ def test_medium_tool_result_binds_rule_key_only_after_full_identity_validation()
 def test_final_representation_is_static_for_high_warning_for_medium_and_unchanged_for_low() -> None:
     original = "assistant response with sentinel"
     high = guard.represent_final_text(original, all_scores(0.8))
-    medium = guard.represent_final_text(original, answers(destructive_action=0.5))
+    medium = guard.represent_final_text(original, complete_scores(destructive_action=0.5))
     low = guard.represent_final_text(original, all_scores(0.1))
 
     assert high.action == "replace"
@@ -213,10 +250,13 @@ def test_final_representation_is_static_for_high_warning_for_medium_and_unchange
 
 
 def test_final_invalid_result_does_not_claim_a_safe_or_blocking_verdict() -> None:
-    result = guard.represent_final_text("unchanged", answers(jailbreak_injection=math.inf))
+    result = guard.represent_final_text(
+        "unchanged",
+        complete_scores(jailbreak_injection=math.inf),
+    )
 
     assert result.action == "unavailable"
-    assert result.text == "unchanged"
+    assert result.text == "Safety screen unavailable; response not verified.\nunchanged"
 
 
 def test_plugin_instance_scope_is_32_random_bytes_encoded_as_hex(monkeypatch: pytest.MonkeyPatch) -> None:
