@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 try:
     from harness import (
         GUARD_STATIC_TOOL_BLOCK,
@@ -173,6 +175,52 @@ def test_first_turn_route_does_not_require_cache_break_worth() -> None:
         }
     }
     assert len(runtime.calls) == 1
+
+
+@pytest.mark.parametrize(
+    "models",
+    [
+        {},
+        {
+            "cheap": {"model": "duplicate-model", "provider": "provider-a"},
+            "coding": {"model": "duplicate-model", "provider": "provider-a"},
+        },
+    ],
+)
+def test_ineligible_route_only_handler_never_reads_secret(models: dict[str, dict[str, str]]) -> None:
+    runtime = FakeRuntime(route_result())
+    secret_reads = 0
+
+    def read_secret() -> str:
+        nonlocal secret_reads
+        secret_reads += 1
+        return "synthetic-key"
+
+    handler = make_combined_pre_llm_handler(
+        enabled_settings(
+            **{
+                "routing.models": models,
+                "suggestion.enabled": False,
+                "guardrails.enabled": False,
+            }
+        ),
+        runtime=runtime,
+        snapshot_reader=host_snapshot,
+        secret_reader=read_secret,
+        require_home_identity=False,
+    )
+
+    assert (
+        handler(
+            user_message="bounded current request",
+            is_first_turn=True,
+            model="jev-cheap",
+            provider="typesafe",
+        )
+        is None
+    )
+    assert secret_reads == 0
+    assert runtime.calls == []
 
 
 def test_generation_change_between_rank_and_rerank_discards_context() -> None:

@@ -130,6 +130,16 @@ def _harness_model(settings: Mapping[str, Any]) -> str | None:
     return DEFAULT_MODEL if value == DEFAULT_MODEL else None
 
 
+def _eligible_routing_pool(settings: Mapping[str, Any]) -> dict[str, dict[str, str]] | None:
+    """Return a validated pool only when routing is eligible to run."""
+
+    if settings.get("routing.enabled") is not True:
+        return None
+    if settings.get("routing.mode") not in ROUTING_ACTIVE_MODES:
+        return None
+    return _validated_pool(settings.get("routing.models", {}))
+
+
 def make_combined_pre_llm_handler(
     settings: Mapping[str, Any],
     *,
@@ -148,8 +158,8 @@ def make_combined_pre_llm_handler(
     """
 
     detached = {key: value for key, value in settings.items() if type(key) is str}
-    route_enabled = detached.get("routing.enabled") is True and detached.get("routing.mode") in ROUTING_ACTIVE_MODES
-    route_pool = _validated_pool(detached.get("routing.models", {})) if route_enabled else None
+    route_pool = _eligible_routing_pool(detached)
+    route_enabled = route_pool is not None
     suggestion_enabled = detached.get("suggestion.enabled") is True
     active_runtime = runtime or TypeSafeRuntime(
         settings=detached,

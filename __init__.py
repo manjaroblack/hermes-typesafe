@@ -13,7 +13,6 @@ if __package__:
     from .build_identity import build_identity as _get_build_identity
     from .questions import (
         DEFAULT_MODEL,
-        ROUTING_ACTIVE_MODES,
         ROUTING_MODES,
         ROUTING_POOL_MAX,
         ROUTING_POOL_NAMES,
@@ -21,6 +20,7 @@ if __package__:
     )
     from .runtime import TypeSafeRuntime, runtime_status
     from .harness import (
+        _eligible_routing_pool,
         make_combined_pre_llm_handler,
         make_final_guard_handler,
         make_pre_tool_guard_handler,
@@ -39,7 +39,6 @@ else:  # pragma: no cover - pytest can collect a flat plugin root as ``__init__`
     from build_identity import build_identity as _get_build_identity
     from questions import (
         DEFAULT_MODEL,
-        ROUTING_ACTIVE_MODES,
         ROUTING_MODES,
         ROUTING_POOL_MAX,
         ROUTING_POOL_NAMES,
@@ -47,6 +46,7 @@ else:  # pragma: no cover - pytest can collect a flat plugin root as ``__init__`
     )
     from runtime import TypeSafeRuntime, runtime_status
     from harness import (
+        _eligible_routing_pool,
         make_combined_pre_llm_handler,
         make_final_guard_handler,
         make_pre_tool_guard_handler,
@@ -170,14 +170,11 @@ def register(ctx: Any) -> None:
     runtimes = [getattr(handler, "_typesafe_runtime", None)]
     if supports_reviewed_harness(ctx):
         harness_runtime = None
-        harness_settings_enabled = (
+        pre_llm_enabled = (
             settings.get("suggestion.enabled") is True
-            or settings.get("guardrails.enabled") is True
-            or (
-                settings.get("routing.enabled") is True
-                and settings.get("routing.mode") in ROUTING_ACTIVE_MODES
-            )
+            or _eligible_routing_pool(settings) is not None
         )
+        harness_settings_enabled = pre_llm_enabled or settings.get("guardrails.enabled") is True
         if harness_settings_enabled:
             harness_runtime = TypeSafeRuntime(
                 settings=settings,
@@ -185,9 +182,7 @@ def register(ctx: Any) -> None:
                 require_home_identity=True,
             )
             runtimes.append(harness_runtime)
-        if harness_runtime is not None and (
-            settings.get("suggestion.enabled") is True or settings.get("routing.enabled") is True
-        ):
+        if harness_runtime is not None and pre_llm_enabled:
             combined = make_combined_pre_llm_handler(
                 settings,
                 snapshot_reader=getattr(ctx, "skills_snapshot", None),
