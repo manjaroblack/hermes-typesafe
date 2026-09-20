@@ -23,15 +23,13 @@ if __package__:
     from ._build_identity import ABI as NATIVE_BROKER_ABI, BUILD_SHA256 as NATIVE_BUILD_SHA256
     from .client import AsyncTypeSafeClient, ClientError
     from .limits import LimitsError, ValidatedRequest, preflight_request
+    from .questions import HOOK_TIMEOUT_SECONDS, TOOL_TIMEOUT_SECONDS, USEFUL_TOOL_SECONDS
 else:  # pragma: no cover - flat plugin smoke import
     from _build_identity import ABI as NATIVE_BROKER_ABI, BUILD_SHA256 as NATIVE_BUILD_SHA256
     from client import AsyncTypeSafeClient, ClientError
     from limits import LimitsError, ValidatedRequest, preflight_request
+    from questions import HOOK_TIMEOUT_SECONDS, TOOL_TIMEOUT_SECONDS, USEFUL_TOOL_SECONDS
 
-TOOL_TIMEOUT_SECONDS = 120.0
-HOOK_TIMEOUT_SECONDS = 2.0
-USEFUL_TOOL_SECONDS = 119.0
-USEFUL_HOOK_SECONDS = 1.8
 BROKER_ABI = NATIVE_BROKER_ABI
 BROKER_BUILD_SHA256 = NATIVE_BUILD_SHA256
 

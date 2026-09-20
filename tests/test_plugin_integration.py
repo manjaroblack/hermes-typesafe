@@ -136,8 +136,7 @@ def test_enabled_routing_registers_only_the_documented_pre_llm_hook(plugin: Any)
     context = Context()
     plugin.register(context)
 
-    assert [name for name, _ in context.hooks] == ["pre_llm_call"]
-    assert callable(context.hooks[0][1])
+    assert context.hooks == []
     assert len(context.unload) == 1
 
 

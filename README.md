@@ -1,84 +1,41 @@
 # Hermes TypeSafe
 
 Standalone native Hermes plugin for TypeSafe System One typed decisions.
-This repository contains the bounded typed client/runtime phase: registration,
-strict JSON preflight, mixed-question requests, sanitized responses, and an
-offline canonical broker boundary.
+The distribution contains a bounded typed client/runtime, the `system_one`
+tool, and a reviewed capability-gated harness for skill suggestion, guardrails,
+final-output screening, and model routing.
 
-Status: H cumulative experimental candidate; not feature-complete, not catalog-eligible,
-and not installed into a live Hermes profile. Guardrails and suggestion remain
-held on the inspected host.
-
-The cumulative implementation includes pure, synthetic ranking/verified-
-descriptor fixtures, the plugin-local `typesafe-system-one` skill, held
-guard helpers, hint-only routing, and a canonical installed broker. The
-production suggestion adapter is inert with status `HELD_UNSUPPORTED_HOST`:
-it performs no roster discovery, filesystem scan, cache refresh, worker/queue
-work, or suggestion RPC. Synthetic helper success is not live suggestion
-support and does not satisfy the original catalog milestone.
+Status: H cumulative experimental candidate; install and catalog decisions remain
+human-gated. The harness activates only when the host exposes the complete
+reviewed fork API. On the current host, or any host missing a marker, the
+harness remains inert with `HELD_UNSUPPORTED_HOST` semantics.
 
 ## Capability boundary
 
-| Capability | Current behavior |
+| Capability | Behavior |
 | --- | --- |
 | `system_one` tool | Registered under toolset `typesafe`; key-gated; accepts bounded string/object/array state and one mixed `noul`/`choice`/`score` batch. |
-| TypeSafe client/network | Lazy per-operation SDK client; fixed `https://api.typesafe.ai/v1/systemone`, pinned `jev-1.13.0` default, retry count zero, and sanitized errors. |
-| Suggestion hook | `HELD_UNSUPPORTED_HOST`; no hook, roster scan, snapshot, cache, or RPC. |
-| Bundled skill | `typesafe:typesafe-system-one`; documents the bounded tool contract and held capabilities. |
-| Guardrails | `HELD_UNSUPPORTED_HOST`; no `pre_tool_call` or `transform_llm_output` callback, approval call, or final-output claim. |
-| Routing | Default-off `pre_llm_call` advisory hook; one current-message batch can suggest a configured pool label, but never switches models or mutates config/cache/provider state. |
+| TypeSafe client/network | Lazy per-operation SDK client; fixed `https://api.typesafe.ai/v1/systemone`, exact harness model `jev-1.13.0`, retry count zero, and sanitized errors. |
+| Combined pre-LLM hook | With all markers, one callback performs local-pool routing plus two-stage suggestion ranking; it sends only allowlisted current-message/snapshot projections and returns host-applied directives/context. |
+| Tool guard hook | With all markers and `guardrails.enabled`, one decision-phase `pre_tool_call` screens exact bounded `{tool_name,args}` state, skips `system_one`, blocks sensitive keys locally, and delegates medium risk to native approval. |
+| Final transform | With all markers and `guardrails.enabled`, one `transform_llm_output` callback applies a separate final rubric after complete output; unavailable paths prepend a static marker and never retract streaming text. |
+| Bundled skill | `typesafe:typesafe-system-one`; documents activation markers, limits, seven offline recipes, privacy, and rollback. |
 | Canonical broker | The same distribution carries `hermes_typesafe_broker.core`; runtime admission is unavailable when provenance, interpreter, lease, or broker checks fail. |
 
-A held feature is not a secure pass or a completed product requirement. The
-original suggestion and guardrail acceptance criteria remain open until a
-fresh host-capability design and review authorize activation.
-
-## H integration acceptance
-
-The reviewed H worktree is tested from the exact reviewed G ancestor. The
-distribution builds one wheel and source archive with explicit
-`hermes_typesafe` and `hermes_typesafe_broker` mappings, matching generated
-ABI/build identities, the plugin manifest, and the bundled skill. Archives
-exclude tests, docs, worktrees, bytecode, and environment files. The runtime
-requires that same installed wheel; a native copy or clone without its
-canonical broker dependency remains registered but returns a static
-`runtime_unavailable` result.
-
-The acceptance lane copies the installed plugin into two temporary Hermes
-homes and loads both copies through the pinned public `PluginManager`. It
-proves real namespaced registration, qualified skill discovery, one shared
-canonical broker, per-home secret/model isolation, four-operation global
-admission, unload/reload revocation, cancellation, and bounded shutdown.
-Default tests are keyless, socket-denied, and provider-mocked. An ambient
-`TYPESAFE_API_KEY` is never used as a fallback. Any optional live smoke is a
-separate explicit operator lane; absent credentials skip, authentication
-failure fails, and no credential or provider body is recorded.
-
-## Guard helper boundary
-
-Phase F adds `guard.py` as a pure, deterministic synthetic helper only. It
-classifies explicit bounded fixture answers for the three built-in questions,
-creates a local v3 digest for a fully identified synthetic call, and produces
-static final-text representations for tests. `questions.py` remains the sole
-production home for guard questions, rubrics, score bounds, and thresholds.
-
-The plugin still registers zero `pre_tool_call` and
-`transform_llm_output` callbacks even when `guardrails.enabled` is true. The
-helper never calls the TypeSafe SDK, Hermes approval store, tool dispatcher, or
-host configuration, and its `approve`/`block`/replacement values are not
-security decisions or Hermes approval directives. Missing medium-call
-identity refuses the synthetic approval key without a stable per-check
-fallback. High/medium composition at the current host remains
-`DEFERRED_HOST_CAPABILITY`; streamed or interim text cannot be retracted.
+Missing any of `pre_llm_call.model_switch.v1`,
+`pre_tool_call.decision.v1`, or `skills.snapshot.v1` registers none of the
+three harness callback families, even when flags are enabled. All flags are
+default-off. Registration never writes host configuration, discovers a roster,
+starts a worker, or contacts TypeSafe merely because a flag is present.
 
 ## Installation contract
 
 The native discovery path is a copy or git clone at
 `~/.hermes/plugins/typesafe`. Install the reviewed `hermes-typesafe` wheel and
 its declared `typesafe-sdk>=0.7,<0.9` dependency into the same interpreter that
-runs Hermes before invoking `system_one`. The plugin never
-installs dependencies, adds its checkout to `sys.path`, downloads a broker, or
-falls back to a per-profile runtime.
+runs Hermes before invoking `system_one`. The plugin never installs
+dependencies, adds its checkout to `sys.path`, downloads a broker, or falls back
+to a per-profile runtime.
 
 ```bash
 git clone <reviewed-private-repository> ~/.hermes/plugins/typesafe
@@ -88,13 +45,14 @@ hermes plugins enable typesafe
 
 Set `TYPESAFE_API_KEY` through Hermes' scoped secret mechanism. The plugin does
 not read `.env`, auth files, or `os.environ` as a fallback. A missing or
-whitespace-only key makes `system_one` unavailable.
+whitespace-only key makes `system_one` unavailable and makes optional pre-LLM
+features no-op; guard and final paths fail closed.
 
 ## Settings
 
 Settings are read only from the plugin-relative
 `plugins.entries.typesafe.settings` namespace. Registration never persists
-values or mutates the host configuration.
+values or mutates host configuration.
 
 ```yaml
 plugins:
@@ -120,47 +78,81 @@ routing:
   mode: first_turn
   models:
     cheap:
-      model: jev-1.13.0
+      model: jev-cheap
       provider: typesafe
     coding:
       model: jev-coding
       provider: typesafe
 ```
 
-The model is pinned to `jev-1.13.0`; ambient base/model variables do not
-override the product contract. `questions.py` is the single production home
-for decision thresholds and built-in question policy.
+Only `cheap`, `coding`, `reasoning`, and `long-context` labels are accepted,
+with at most four unique `{model, provider}` identities. Routing resolves both
+fields locally; no provider-proposed SKU is accepted. `first_turn` requires the
+actual first-turn boolean and cannot break cache. `cache_break_if_worth_it`
+requires a later turn and only returns `allow_cache_break: true` after
+confidence, mismatch, worth, difficulty, and current-identity gates pass.
 
-Routing is opt-in and accepts only the named `cheap`, `coding`, `reasoning`, and
-`long-context` labels. Each entry is a local `{model, provider}` pair;
-provider/model identities remain local and are never sent as routing state;
-duplicate model identities are ambiguous and fail closed. The hook sends only
-the original current `user_message` and uses the actual boolean `is_first_turn`
-value. `first_turn` evaluates only a first turn; `cache_break_if_worth_it`
-evaluates eligible turns and logs the hypothetical phrase `would have switched`
-only after all `.80` gates pass.
-Every returned suffix is an advisory hint and states that no model switch was
-performed. Empty or invalid pools, missing keys, malformed responses, provider
-faults, timeouts, and ambiguous model identities return no context. The
-suggestion and guardrail capabilities remain held on this host.
+## Bounded hook contracts
 
-## Bounded runtime
+Every hook has a two-second absolute budget and a useful 1.8-second budget. The
+combined pre-LLM callback makes no more than three RPCs: one routing batch and,
+when a verified roster is available, one rank/gate batch plus one shortlist
+rerank. Guard and final callbacks make at most one RPC each. The tool operation
+retains its 120-second budget.
+
+The suggestion snapshot is immutable, bounded to 512 entries, 1 MiB metadata,
+and 2 MiB raw publication input. Skill names are bounded to 128 bytes,
+descriptions to 512 bytes, and excerpts to 700 characters/2,800 bytes. Profile,
+registry, roots, and quarantine generations must all equal the published
+generation. The rank request includes only names plus descriptions capped at 60
+characters; the rerank adds excerpts capped at 700. A generation change between
+requests discards the result. Only a valid evaluated hit or evaluated miss can
+produce context; provider failure, malformed answers, stale data, and
+unavailable snapshots do not claim a miss.
+
+Tool guard state is exactly `{tool_name, args}`. The plugin's own `system_one`
+call is skipped before validation. Keys named (case-insensitively)
+`authorization`, `api_key`, `token`, `password`, `secret`, or `cookie` block
+locally and are never uploaded; arbitrary string values are not scanned or
+claimed to be secrets. Low risk passes, high risk blocks, and medium risk
+returns a native approval decision bound by the host to the current call's
+nonce, generation, tool identity, and canonical arguments. Missing key, model,
+identity, broker, provider, malformed result, deadline, or runtime error blocks.
+
+Final output uses separate final-specific questions. High risk replaces the
+complete response with a static safe response; medium risk prepends a static
+warning; unavailable/error/deadline paths prepend
+`Safety screen unavailable; response not verified.` to the original text.
+Streaming/interim output is never buffered or retracted.
+
+## Offline recipes
+
+`questions.py` contains seven schema-validated, offline-only examples:
+`intent-before-expensive-tools`, `rerank`, `citation check` (`citation-check`),
+`spawn-or-not`, `cron-worth-it`, `kanban class` (`kanban-class`), and
+`memory-worthiness`. Each preserves an explicit uncertain/unavailable outcome.
+The examples do not schedule work, call the provider, authorize tools, or write
+memory; they are not catalog eligibility by themselves.
+
+## Bounded runtime and privacy
 
 Preflight rejects unsupported/custom JSON types, cycles, non-finite numbers,
-invalid Unicode, and cap violations before SDK construction or broker admission.
-The fixed limits are 32,768 UTF-8 bytes for state, 131,072 bytes for the
-canonical request and raw response, depth 8, 4,096 JSON values/keys, 256 items
-per container, 16 questions, 128 choice options, and 16 score levels. A single
-process broker admits at most four operations, uses one lazy event-loop thread,
-and has no waiting queue. Timeout or unload cancellation does not release a
-slot until the underlying operation exits.
+invalid Unicode, and cap violations before SDK construction or broker
+admission. The broker admits at most four operations globally, uses one lazy
+event-loop thread, and keeps cancelled slots charged until the underlying
+operation exits. Requests use a fixed endpoint and model policy; SDK debug body
+logging is suppressed.
+
+Only explicitly invoked TypeSafe operations send bounded state and questions.
+History, system prompts, tool results, host context, credentials, raw
+exceptions, and ambient `ContextVar` values are not projected into harness
+requests or error JSON. The plugin captures no roster, starts no worker, and
+uses no filesystem discovery on an unsupported host.
 
 ## Development
 
-The package metadata accepts Python 3.10+. The canonical broker runtime is
-supported only on CPython 3.10, 3.11, and 3.12 main interpreters until a
-fresh capability review expands that boundary. Use the lockfile and an
-isolated virtual environment; do not install into a live Hermes profile.
+The package metadata accepts Python 3.10+. Use the lockfile and an isolated
+virtual environment; do not install into a live Hermes profile.
 
 ```bash
 uv sync --locked --extra test
@@ -168,28 +160,9 @@ uv run --no-sync pytest -q
 uv build --wheel --sdist
 ```
 
-The default test command excludes the explicit `live` marker. Offline tests
-use synthetic keys, mocked boundaries, temporary homes, and network/thread
-poison probes. Provider inference is not part of the default suite.
-
-The wheel maps the flat native source package to `hermes_typesafe` and maps
-`broker_src/hermes_typesafe_broker` to the canonical
-`hermes_typesafe_broker` package. The broker source digest uses sorted
-`__init__.py` and `core.py` records framed as relative path, NUL, decimal byte
-length, NUL, exact bytes. Generated identity files are excluded from the
-input set.
-
-## Security and privacy limits
-
-Only the explicitly invoked `system_one` tool sends bounded current state and
-questions to TypeSafe; when routing is explicitly enabled, its advisory hook
-sends only the current `user_message`. Secrets, history, system prompts, tool
-results, host context, and raw exceptions are not projected into either
-request or error JSON.
-Requests use a fixed endpoint and model policy; ambient base/model variables and
-SDK debug body logging are suppressed. The held guardrails do not provide
-screening, approval, stream prevention, or a security boundary. Streaming text
-cannot be retracted by a future final-output hook.
+The default test command excludes the explicit `live` marker. Offline tests use
+synthetic keys, mocked boundaries, temporary homes, and network/thread poison
+probes. Provider inference is not part of the default suite.
 
 ## Rollback
 

@@ -36,10 +36,10 @@
    `core.py` bytes. Native copy-only installation without the matching wheel is
    documented as a later runtime prerequisite, not silently repaired.
 
-9. H retains the held suggestion and guard boundaries while adding hint-only
-   routing and the canonical installed broker. The broker is imported only as
-   `hermes_typesafe_broker.core` after provenance, ABI, build identity,
-   interpreter, lifecycle, and home checks.
+9. H activates the reviewed suggestion, guard, final-screen, and model-switch
+   callbacks only behind all three public capability markers. Unsupported hosts
+   retain `HELD_UNSUPPORTED_HOST`; the plugin never downgrades a real switch to
+   an advisory hint.
 10. H packaging is one distribution: native plugin modules map to
     `hermes_typesafe`, broker sources map to `hermes_typesafe_broker`, and both
     generated identity files must match the same ABI and source digest.
@@ -65,26 +65,29 @@ phase-limited status statements with the following cumulative boundary:
 - The public fixture is pinned to
   `ee4452991d17534aa561f31ee55596d082aa94e7`; every temporary home is isolated
   from inherited Hermes/Kanban environment overrides.
-- Suggestion and guardrails are `HELD_UNSUPPORTED_HOST`. Pure helper fixtures
-  and zero-registration proofs do not satisfy their original live ACs or make
-  this candidate catalog-eligible.
+- Suggestion and guardrails activate only when the host advertises all three
+  reviewed capability markers. Pure helper fixtures remain offline evidence;
+  a missing marker set is still `HELD_UNSUPPORTED_HOST` and registers no
+  harness callback.
 - Runtime success requires canonical installed broker ownership. Missing,
   shadowed, mismatched, unsupported, or wrong-home seams fail closed without a
   per-profile broker fallback.
 
-## Held capabilities
+## Capability-gated harness
 
-- Suggestion is `HELD_UNSUPPORTED_HOST`: no snapshot producer, roster crawl,
-  cache, scanner, worker, or suggestion RPC exists in C.
-- Guardrails are `HELD_UNSUPPORTED_HOST`: no `pre_tool_call` or
-  `transform_llm_output` callback, approval-store call, high-block claim,
-  medium-approval claim, or final-output replacement exists in C. The future
-  composed-hook matrix is `DEFERRED_HOST_CAPABILITY`, not a passing test.
-- Routing is default-off and not registered in C; later routing remains a hint
-  only and cannot switch models or mutate cache/config.
-- Future streaming, owner override, outage, and cancellation behavior must be
-  proven at the host/runtime seam. A disclaimer is not a substitute for that
-  proof.
+- The complete marker set is `pre_llm_call.model_switch.v1`,
+  `pre_tool_call.decision.v1`, and `skills.snapshot.v1`. Registration also
+  requires a current immutable snapshot reader and phase-aware hook seam.
+- One combined pre-LLM callback owns routing plus two-stage suggestion; one
+  decision-phase pre-tool callback owns tool screening; one final transform
+  owns completed-output screening. Feature flags never create a second hook.
+- Routing returns only a locally configured `{model, provider}` host directive.
+  First-turn directives cannot break cache; later cache-break directives require
+  every gate. Missing, malformed, stale, or unavailable inputs fail closed.
+- Guard medium results use the host's native approval/binding path. Sensitive
+  argument keys are blocked before upload, the plugin's own tool is skipped,
+  and provider/key/broker/deadline failures block. Final unavailable results
+  use a static prefix and never retract streaming output.
 
 ## Human gates and rollback
 

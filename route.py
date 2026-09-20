@@ -1,8 +1,8 @@
-"""Experimental, hint-only model routing for the native TypeSafe plugin.
+"""Bounded model-routing helpers for the reviewed TypeSafe host harness.
 
-The callback reads only the documented pre_llm_call projection and returns an
-ephemeral current-user suffix. It never changes Hermes model/config/cache
-state, and ambiguous model identities fail closed before a switch-worthy claim.
+The supported-host directive callback returns a host-applied `{model, provider}`
+directive. The legacy pure advisory helper remains available for offline
+compatibility tests and is not registered by the plugin.
 """
 
 from __future__ import annotations
@@ -21,12 +21,14 @@ try:
         ROUTING_CHOICE,
         ROUTING_DIFFICULTY,
         ROUTING_DIFFICULTY_LEVELS,
+        ROUTING_ACTIVE_MODES,
         ROUTING_HIGH,
         ROUTING_MISMATCH,
         ROUTING_MODES,
         ROUTING_POOL_MAX,
         ROUTING_POOL_NAMES,
         ROUTING_WORTH,
+        USEFUL_HOOK_SECONDS,
         routing_questions,
     )
     from .runtime import HOOK_TIMEOUT_SECONDS, TypeSafeRuntime
@@ -38,12 +40,14 @@ except ImportError:  # pragma: no cover - flat plugin import
         ROUTING_CHOICE,
         ROUTING_DIFFICULTY,
         ROUTING_DIFFICULTY_LEVELS,
+        ROUTING_ACTIVE_MODES,
         ROUTING_HIGH,
         ROUTING_MISMATCH,
         ROUTING_MODES,
         ROUTING_POOL_MAX,
         ROUTING_POOL_NAMES,
         ROUTING_WORTH,
+        USEFUL_HOOK_SECONDS,
         routing_questions,
     )
     from runtime import HOOK_TIMEOUT_SECONDS, TypeSafeRuntime
@@ -59,6 +63,7 @@ class RoutingDecision:
 
     target_name: str
     target_model: str
+    target_provider: str
     mismatch: float
     worth_breaking_cache: float
     confidence: float | None
@@ -103,6 +108,9 @@ def _validated_pool(models: Any) -> dict[str, dict[str, str]] | None:
         if model is None or provider is None:
             return None
         cleaned[name] = {"model": model, "provider": provider}
+    identities = {(entry["model"], entry["provider"]) for entry in cleaned.values()}
+    if len(identities) != len(cleaned):
+        return None
     return cleaned
 
 
@@ -135,11 +143,27 @@ def _unique_models(pool: Mapping[str, Mapping[str, str]]) -> bool:
     return len(model_names) == len(set(model_names))
 
 
-def _current_identity_is_unambiguous(pool: Mapping[str, Mapping[str, str]], current_model: Any) -> bool:
+def _unique_identities(pool: Mapping[str, Mapping[str, str]]) -> bool:
+    identities = {(entry["model"], entry["provider"]) for entry in pool.values()}
+    return len(identities) == len(pool)
+
+
+def _current_identity_is_unambiguous(
+    pool: Mapping[str, Mapping[str, str]], current_model: Any, current_provider: Any = None
+) -> bool:
     current = _bounded_identifier(current_model)
-    if current is None or not _unique_models(pool):
+    provider = None if current_provider is None else _bounded_identifier(current_provider)
+    if current is None or (current_provider is not None and provider is None):
         return False
-    return sum(entry["model"] == current for entry in pool.values()) == 1
+    if current_provider is None and not _unique_models(pool):
+        return False
+    if not _unique_identities(pool):
+        return False
+    matches = [
+        entry for entry in pool.values()
+        if entry["model"] == current and (provider is None or entry["provider"] == provider)
+    ]
+    return len(matches) == 1
 
 
 def build_routing_questions(models: Any) -> dict[str, dict[str, Any]]:
@@ -151,7 +175,13 @@ def build_routing_questions(models: Any) -> dict[str, dict[str, Any]]:
     return routing_questions(tuple(pool))
 
 
-def evaluate_routing(response: Any, models: Any, *, current_model: Any) -> RoutingDecision | None:
+def evaluate_routing(
+    response: Any,
+    models: Any,
+    *,
+    current_model: Any,
+    current_provider: Any = None,
+) -> RoutingDecision | None:
     """Validate one normalized response and compute advisory switch-worthiness."""
 
     pool = _validated_pool(models)
@@ -204,19 +234,25 @@ def evaluate_routing(response: Any, models: Any, *, current_model: Any) -> Routi
         return None
 
     target_model = pool[target_name]["model"]
+    target_provider = pool[target_name]["provider"]
     current = _bounded_identifier(current_model)
+    current_provider_value = None if current_provider is None else _bounded_identifier(current_provider)
+    same_target = target_model == current and (
+        current_provider is None or target_provider == current_provider_value
+    )
     switch_worthy = (
         mismatch >= ROUTING_HIGH
         and worth >= ROUTING_HIGH
         and confidence is not None
         and confidence >= ROUTING_HIGH
         and current is not None
-        and _current_identity_is_unambiguous(pool, current)
-        and target_model != current
+        and _current_identity_is_unambiguous(pool, current, current_provider)
+        and not same_target
     )
     return RoutingDecision(
         target_name=target_name,
         target_model=target_model,
+        target_provider=target_provider,
         mismatch=mismatch,
         worth_breaking_cache=worth,
         confidence=confidence,
@@ -234,6 +270,119 @@ def format_routing_hint(target_name: str) -> str:
         f"Routing hint: consider the configured {target_name} model for this request. "
         "No model switch was performed."
     )
+
+
+def format_model_switch_directive(decision: RoutingDecision, *, allow_cache_break: bool) -> dict[str, Any]:
+    """Return the reviewed fork directive; the host turn thread applies it."""
+
+    if not decision.switch_worthy or type(allow_cache_break) is not bool:
+        raise ValueError("routing decision is not switch-worthy")
+    return {
+        "model_switch": {
+            "model": decision.target_model,
+            "provider": decision.target_provider,
+            "allow_cache_break": allow_cache_break,
+        }
+    }
+
+
+def _current_label(pool: Mapping[str, Mapping[str, str]], current_model: Any, current_provider: Any) -> str | None:
+    if not _current_identity_is_unambiguous(pool, current_model, current_provider):
+        return None
+    model = _bounded_identifier(current_model)
+    provider = _bounded_identifier(current_provider)
+    matches = [
+        name for name, entry in pool.items()
+        if entry["model"] == model and (provider is None or entry["provider"] == provider)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def make_routing_directive_handler(
+    settings: Mapping[str, Any],
+    *,
+    runtime: Any = None,
+    secret_reader: Callable[[], Any] | None = None,
+    home_identity: str | None = None,
+    require_home_identity: bool = True,
+    clock: Callable[[], float] = time.monotonic,
+    logger: logging.Logger | None = None,
+) -> Callable[..., dict[str, Any] | None]:
+    """Create a supported-host callback returning a host-applied model directive."""
+
+    detached = {key: value for key, value in settings.items() if type(key) is str}
+    enabled = detached.get("routing.enabled", False)
+    mode = detached.get("routing.mode", "off")
+    pool = _validated_pool(detached.get("routing.models", {}))
+    selected_model = detached.get("model", DEFAULT_MODEL)
+    if selected_model != DEFAULT_MODEL:
+        selected_model = None
+    active_runtime = runtime or TypeSafeRuntime(
+        settings=detached,
+        home_identity=home_identity,
+        require_home_identity=require_home_identity,
+    )
+    read_secret = secret_reader or _read_scoped_secret
+    active_logger = logger or LOGGER
+
+    def handler(
+        user_message: Any,
+        is_first_turn: Any = False,
+        model: Any = None,
+        provider: Any = None,
+    ) -> dict[str, Any] | None:
+        started = clock()
+        if (
+            pool is None
+            or selected_model is None
+            or enabled is not True
+            or mode not in ROUTING_ACTIVE_MODES
+        ):
+            return None
+        if mode == "first_turn" and is_first_turn is not True:
+            return None
+        if mode == "cache_break_if_worth_it" and is_first_turn is not False:
+            return None
+        current_label = _current_label(pool, model, provider)
+        if current_label is None or type(provider) is not str or not provider or not _valid_user_message(user_message):
+            return None
+        if not _home_matches(home_identity, required=require_home_identity):
+            return None
+        try:
+            key = read_secret()
+        except Exception:
+            return None
+        if not _valid_scoped_secret(key):
+            return None
+        remaining = min(HOOK_TIMEOUT_SECONDS, USEFUL_HOOK_SECONDS - (clock() - started))
+        if remaining <= 0:
+            return None
+        try:
+            result = active_runtime.execute_sync(
+                state={"user_message": user_message, "current_label": current_label},
+                questions=build_routing_questions(pool),
+                model=selected_model,
+                api_key=key,
+                timeout=min(remaining, HOOK_TIMEOUT_SECONDS),
+            )
+            decision = evaluate_routing(
+                result,
+                pool,
+                current_model=model,
+                current_provider=provider,
+            )
+        except Exception:
+            return None
+        if decision is None or not decision.switch_worthy:
+            return None
+        allow_cache_break = mode == "cache_break_if_worth_it"
+        if allow_cache_break:
+            active_logger.info("would have switched to configured model label %s", decision.target_name)
+        return format_model_switch_directive(decision, allow_cache_break=allow_cache_break)
+
+    handler._typesafe_runtime = active_runtime  # type: ignore[attr-defined]
+    handler._routing_pool = pool  # type: ignore[attr-defined]
+    return handler
 
 
 def compose_advisory_context(suggestion_context: Any, routing_hint: Any) -> str | None:
@@ -346,7 +495,9 @@ __all__ = [
     "compose_advisory_context",
     "evaluate_route",
     "evaluate_routing",
+    "format_model_switch_directive",
     "format_hint",
     "format_routing_hint",
+    "make_routing_directive_handler",
     "make_routing_handler",
 ]

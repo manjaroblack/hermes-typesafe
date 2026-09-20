@@ -105,6 +105,11 @@ def test_current_unknown_and_duplicate_model_identity_never_claim_switch() -> No
     duplicate = evaluate_routing(response(), duplicate_pool, current_model="jev-shared")
     assert duplicate is not None and duplicate.switch_worthy is False
 
+    provider_resolved = evaluate_routing(
+        response(), duplicate_pool, current_model="jev-shared", current_provider="provider-a"
+    )
+    assert provider_resolved is not None and provider_resolved.switch_worthy is True
+
     unknown_current = evaluate_routing(response(), POOL, current_model="not-configured")
     assert unknown_current is not None and unknown_current.switch_worthy is False
 

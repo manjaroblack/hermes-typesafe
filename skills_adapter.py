@@ -1,9 +1,7 @@
-"""Held production skill adapter and bounded verified-snapshot fixtures.
+"""Verified snapshot adapter for the reviewed skills.snapshot.v1 host seam.
 
-The inspected Hermes hosts do not expose a safe immutable skill snapshot seam.
-This module therefore never discovers skills in production.  The descriptor and
-snapshot helpers are explicit, side-effect-free fixtures for a future reviewed
-host capability and for the bundled skill's contract tests.
+The current-host fallback remains inert; production discovery occurs only through
+an immutable snapshot published by the reviewed fork capability.
 """
 
 from __future__ import annotations
@@ -17,22 +15,46 @@ from dataclasses import dataclass
 from typing import Any
 
 try:
-    from .questions import SUGGESTION_EXCERPT_CHARS
+    from .questions import (
+        MAX_SKILL_DESCRIPTION_BYTES as _MAX_SKILL_DESCRIPTION_BYTES,
+        MAX_SKILL_NAME_BYTES as _MAX_SKILL_NAME_BYTES,
+        MAX_SKILL_RAW_BYTES as _MAX_SKILL_RAW_BYTES,
+        MAX_SNAPSHOT_EXCERPT_BYTES as _MAX_SNAPSHOT_EXCERPT_BYTES,
+        MAX_SNAPSHOT_ENTRIES as _MAX_SNAPSHOT_ENTRIES,
+        MAX_SNAPSHOT_METADATA_BYTES as _MAX_SNAPSHOT_METADATA_BYTES,
+        MAX_SNAPSHOT_PATH_BYTES as _MAX_SNAPSHOT_PATH_BYTES,
+        MAX_SNAPSHOT_PATH_DEPTH as _MAX_SNAPSHOT_PATH_DEPTH,
+        MAX_SNAPSHOT_PATH_ENTRIES as _MAX_SNAPSHOT_PATH_ENTRIES,
+        MAX_SNAPSHOT_RAW_BYTES as _MAX_SNAPSHOT_RAW_BYTES,
+        SUGGESTION_EXCERPT_CHARS,
+    )
 except ImportError:  # pragma: no cover - flat plugin import
-    from questions import SUGGESTION_EXCERPT_CHARS
+    from questions import (
+        MAX_SKILL_DESCRIPTION_BYTES as _MAX_SKILL_DESCRIPTION_BYTES,
+        MAX_SKILL_NAME_BYTES as _MAX_SKILL_NAME_BYTES,
+        MAX_SKILL_RAW_BYTES as _MAX_SKILL_RAW_BYTES,
+        MAX_SNAPSHOT_EXCERPT_BYTES as _MAX_SNAPSHOT_EXCERPT_BYTES,
+        MAX_SNAPSHOT_ENTRIES as _MAX_SNAPSHOT_ENTRIES,
+        MAX_SNAPSHOT_METADATA_BYTES as _MAX_SNAPSHOT_METADATA_BYTES,
+        MAX_SNAPSHOT_PATH_BYTES as _MAX_SNAPSHOT_PATH_BYTES,
+        MAX_SNAPSHOT_PATH_DEPTH as _MAX_SNAPSHOT_PATH_DEPTH,
+        MAX_SNAPSHOT_PATH_ENTRIES as _MAX_SNAPSHOT_PATH_ENTRIES,
+        MAX_SNAPSHOT_RAW_BYTES as _MAX_SNAPSHOT_RAW_BYTES,
+        SUGGESTION_EXCERPT_CHARS,
+    )
 
 HELD_UNSUPPORTED_HOST = "HELD_UNSUPPORTED_HOST"
-MAX_SKILL_NAME_BYTES = 128
-MAX_DESCRIPTION_BYTES = 512
+MAX_SKILL_NAME_BYTES = _MAX_SKILL_NAME_BYTES
+MAX_DESCRIPTION_BYTES = _MAX_SKILL_DESCRIPTION_BYTES
 MAX_EXCERPT_CHARS = SUGGESTION_EXCERPT_CHARS
-MAX_EXCERPT_BYTES = 2_800
-MAX_RAW_SKILL_BYTES = 32_768
-MAX_SNAPSHOT_RAW_BYTES = 2 * 1024 * 1024
-MAX_SNAPSHOT_METADATA_BYTES = 262_144
-MAX_SNAPSHOT_ENTRIES = 128
-MAX_SNAPSHOT_PATH_ENTRIES = 2_048
-MAX_SNAPSHOT_PATH_DEPTH = 16
-MAX_SNAPSHOT_PATH_BYTES = 4_096
+MAX_EXCERPT_BYTES = _MAX_SNAPSHOT_EXCERPT_BYTES
+MAX_RAW_SKILL_BYTES = _MAX_SKILL_RAW_BYTES
+MAX_SNAPSHOT_RAW_BYTES = _MAX_SNAPSHOT_RAW_BYTES
+MAX_SNAPSHOT_METADATA_BYTES = _MAX_SNAPSHOT_METADATA_BYTES
+MAX_SNAPSHOT_ENTRIES = _MAX_SNAPSHOT_ENTRIES
+MAX_SNAPSHOT_PATH_ENTRIES = _MAX_SNAPSHOT_PATH_ENTRIES
+MAX_SNAPSHOT_PATH_DEPTH = _MAX_SNAPSHOT_PATH_DEPTH
+MAX_SNAPSHOT_PATH_BYTES = _MAX_SNAPSHOT_PATH_BYTES
 
 _NAME_PART = re.compile(r"^[A-Za-z0-9_-]+$")
 _KEY = re.compile(r"^[A-Za-z_][A-Za-z0-9_-]*$")
@@ -106,6 +128,46 @@ def is_snapshot_current(snapshot: Any, generation: Any) -> bool:
         and snapshot.roots_generation == generation
         and snapshot.quarantine_generation == generation
     )
+
+
+def host_snapshot_to_verified(snapshot: Any) -> VerifiedSkillSnapshot | None:
+    """Detach one host-published immutable roster without discovering or reading files."""
+
+    if snapshot is None:
+        return None
+    try:
+        generation = getattr(snapshot, "generation", None)
+        entries = getattr(snapshot, "entries", None)
+        if not isinstance(generation, str) or not generation or type(entries) is not tuple:
+            return None
+        if len(entries) > MAX_SNAPSHOT_ENTRIES:
+            return None
+        for metadata_name in ("profile_generation", "registry_generation", "roots_generation", "quarantine_generation"):
+            metadata_generation = getattr(snapshot, metadata_name, generation)
+            if metadata_generation != generation:
+                return None
+    except Exception:
+        return None
+    descriptors: list[SkillDescriptor] = []
+    try:
+        for entry in entries:
+            name = getattr(entry, "name", None)
+            description = getattr(entry, "description", None)
+            excerpt = getattr(entry, "excerpt", None)
+            if type(name) is not str or type(description) is not str or type(excerpt) is not str:
+                return None
+            descriptors.append(skill_descriptor(name, description, excerpt))
+    except Exception:
+        return None
+    return make_verified_snapshot(descriptors, generation=generation)
+
+
+def snapshots_match(first: Any, second: Any) -> bool:
+    """Return whether two detached snapshots have identical generation-bound bytes."""
+
+    if not isinstance(first, VerifiedSkillSnapshot) or not isinstance(second, VerifiedSkillSnapshot):
+        return False
+    return first.generation == second.generation and first.skills == second.skills
 
 
 def _validated_generation(value: Any) -> str:
@@ -219,6 +281,8 @@ def make_verified_snapshot(
             for value in (profile_generation, registry_generation, roots_generation, quarantine_generation)
         )
         if len(metadata) != 4:
+            return None
+        if any(value != generation_value for value in metadata):
             return None
         quarantine_values = _bounded_strings(quarantined, MAX_SNAPSHOT_ENTRIES)
         if quarantine_values is None or quarantine_values:
@@ -626,10 +690,12 @@ __all__ = [
     "SnapshotUnavailable",
     "VerifiedSkillSnapshot",
     "build_verified_snapshot_from_files",
+    "host_snapshot_to_verified",
     "is_snapshot_current",
     "make_verified_snapshot",
     "production_snapshot",
     "read_verified_descriptor",
     "skill_descriptor",
+    "snapshots_match",
     "validate_skill_name",
 ]

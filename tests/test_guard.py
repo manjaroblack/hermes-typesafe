@@ -216,7 +216,7 @@ def test_final_invalid_result_does_not_claim_a_safe_or_blocking_verdict() -> Non
     result = guard.represent_final_text("unchanged", answers(jailbreak_injection=math.inf))
 
     assert result.action == "unavailable"
-    assert result.text == "unchanged"
+    assert result.text == "Safety screen unavailable; response not verified.\nunchanged"
 
 
 def test_plugin_instance_scope_is_32_random_bytes_encoded_as_hex(monkeypatch: pytest.MonkeyPatch) -> None:

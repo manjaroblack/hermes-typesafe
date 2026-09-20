@@ -29,8 +29,8 @@ def test_manifest_declares_only_the_registered_tool_and_required_secret() -> Non
     assert "system_one" in manifest
     assert "provides_hooks:" in manifest
     assert "pre_llm_call" in manifest
-    assert "pre_tool_call" not in manifest
-    assert "transform_llm_output" not in manifest
+    assert "pre_tool_call" in manifest
+    assert "transform_llm_output" in manifest
     assert "capabilities:" not in manifest
 
 
@@ -158,7 +158,7 @@ def test_default_settings_are_inert_and_centralized_in_questions(plugin: Any) ->
         "suggestion.enabled": False,
         "guardrails.enabled": False,
         "routing.enabled": False,
-        "routing.mode": "first_turn",
+        "routing.mode": "off",
         "routing.models": {},
     }
     assert plugin.questions.GUARD_HIGH == 0.80
