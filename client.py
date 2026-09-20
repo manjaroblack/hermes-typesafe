@@ -265,7 +265,66 @@ def _int_key(value: Any) -> int | str:
     return value
 
 
-def _normalize_response(raw: Any, checked: ValidatedRequest) -> dict[str, Any]:
+def _validated_optional_choice_questions(
+    questions: Mapping[str, Any], optional_choice_questions: Any
+) -> tuple[str, ...]:
+    if type(optional_choice_questions) is not tuple or len(optional_choice_questions) > 4:
+        raise ClientError("invalid_input")
+    seen: set[str] = set()
+    for name in optional_choice_questions:
+        if type(name) is not str or not name or name in seen:
+            raise ClientError("invalid_input")
+        try:
+            if len(name.encode("utf-8", errors="strict")) > 64:
+                raise ClientError("invalid_input")
+        except UnicodeEncodeError:
+            raise ClientError("invalid_input") from None
+        question = questions.get(name)
+        if type(question) is not dict or question.get("type") != "choice":
+            raise ClientError("invalid_input")
+        seen.add(name)
+    return optional_choice_questions
+
+
+def _normalize_choice_answer(answer: Any, question: Mapping[str, Any]) -> dict[str, Any] | None:
+    if type(answer) is not dict or answer.get("type") != "choice":
+        return None
+    choice = answer.get("choice")
+    criteria = question.get("criteria")
+    if type(choice) is not str or type(criteria) is not dict or choice not in criteria:
+        return None
+    probabilities = answer.get("probabilities")
+    normalized_probabilities: dict[str, float] | None = None
+    if probabilities is not None:
+        if type(probabilities) is not dict:
+            return None
+        normalized_probabilities = {}
+        for option, probability in probabilities.items():
+            if type(option) is not str or option not in criteria:
+                return None
+            checked_probability = _finite_probability(probability)
+            if checked_probability is None:
+                return None
+            normalized_probabilities[option] = checked_probability
+    confidence = answer.get("confidence")
+    checked_confidence = None if confidence is None else _finite_probability(confidence)
+    if confidence is not None and checked_confidence is None:
+        return None
+    return {
+        "type": "choice",
+        "choice": choice,
+        "probabilities": normalized_probabilities,
+        "confidence": checked_confidence,
+    }
+
+
+def _normalize_response(
+    raw: Any,
+    checked: ValidatedRequest,
+    *,
+    optional_choice_questions: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    optional_names = set(_validated_optional_choice_questions(checked.questions, optional_choice_questions))
     payload = _dump_response(raw)
     try:
         validate_response_payload(payload)
@@ -273,6 +332,10 @@ def _normalize_response(raw: Any, checked: ValidatedRequest) -> dict[str, Any]:
         if error.code == "response_too_large":
             raise ClientError("response_too_large") from None
         raise ClientError("invalid_response") from None
+    if type(payload) is not dict:
+        raise ClientError("invalid_response")
+    if set(payload) != {"model", "answers", "usage"}:
+        raise ClientError("invalid_response")
     if not _valid_response_model(payload.get("model")) or payload["model"] != checked.model:
         raise ClientError("invalid_response")
     answers = payload.get("answers")
@@ -280,12 +343,27 @@ def _normalize_response(raw: Any, checked: ValidatedRequest) -> dict[str, Any]:
     if type(answers) is not dict or type(usage) is not dict:
         raise ClientError("invalid_response")
     expected = set(checked.questions)
-    if set(answers) != expected:
+    answer_names = set(answers)
+    if not answer_names <= expected or not (expected - optional_names) <= answer_names:
         raise ClientError("invalid_response")
+    if any(name not in expected for name in answers):
+        raise ClientError("invalid_response")
+    if any(name not in {"input_tokens", "output_tokens"} for name in usage):
+        raise ClientError("invalid_response")
+    for token_name in ("input_tokens", "output_tokens"):
+        token_value = usage.get(token_name)
+        if token_value is not None and (type(token_value) is not int or token_value < 0):
+            raise ClientError("invalid_response")
     normalized: dict[str, Any] = {"model": payload["model"], "answers": {}, "usage": {}}
     for name, question in checked.questions.items():
+        if name not in answers:
+            if name in optional_names:
+                continue
+            raise ClientError("invalid_response")
         answer = answers.get(name)
         if type(answer) is not dict or answer.get("type") != question.get("type"):
+            if name in optional_names:
+                continue
             raise ClientError("invalid_response")
         kind = question["type"]
         if kind == "noul":
@@ -297,35 +375,12 @@ def _normalize_response(raw: Any, checked: ValidatedRequest) -> dict[str, Any]:
                 raise ClientError("invalid_response")
             normalized["answers"][name] = {"type": "noul", "noul": number_value}
         elif kind == "choice":
-            choice = answer.get("choice")
-            criteria = question.get("criteria")
-            if type(choice) is not str or type(criteria) is not dict or choice not in criteria:
+            normalized_choice = _normalize_choice_answer(answer, question)
+            if normalized_choice is None:
+                if name in optional_names:
+                    continue
                 raise ClientError("invalid_response")
-            probabilities = answer.get("probabilities")
-            normalized_probabilities: dict[str, float] | None = None
-            if probabilities is not None:
-                if type(probabilities) is not dict:
-                    raise ClientError("invalid_response")
-                normalized_probabilities = {}
-                for option, probability in probabilities.items():
-                    if type(option) is not str:
-                        raise ClientError("invalid_response")
-                    if option not in criteria:
-                        raise ClientError("invalid_response")
-                    checked_probability = _finite_probability(probability)
-                    if checked_probability is None:
-                        raise ClientError("invalid_response")
-                    normalized_probabilities[option] = checked_probability
-            confidence = answer.get("confidence")
-            checked_confidence = None if confidence is None else _finite_probability(confidence)
-            if confidence is not None and checked_confidence is None:
-                raise ClientError("invalid_response")
-            normalized["answers"][name] = {
-                "type": "choice",
-                "choice": choice,
-                "probabilities": normalized_probabilities,
-                "confidence": checked_confidence,
-            }
+            normalized["answers"][name] = normalized_choice
         else:
             score = answer.get("score")
             criteria = question.get("criteria")
@@ -393,12 +448,19 @@ class AsyncTypeSafeClient:
         self.transport = transport
         self._active: set[Any] = set()
 
-    async def system_one(self, state: Any, questions: Any) -> dict[str, Any]:
+    async def system_one(
+        self,
+        state: Any,
+        questions: Any,
+        *,
+        optional_choice_questions: tuple[str, ...] = (),
+    ) -> dict[str, Any]:
         try:
             checked = preflight_request(state=state, questions=questions, model=self.model)
         except LimitsError as error:
             code = "payload_too_large" if error.code == "payload_too_large" else "invalid_input"
             raise ClientError(code) from None
+        optional_choice_questions = _validated_optional_choice_questions(checked.questions, optional_choice_questions)
         if not _valid_api_key(self.api_key):
             raise ClientError("unavailable")
         sdk_client: Any = None
@@ -417,7 +479,11 @@ class AsyncTypeSafeClient:
                 sdk_client = sdk.AsyncTypeSafeClient(**kwargs)
                 self._active.add(sdk_client)
                 raw = await sdk_client.system_one(checked.state, checked.questions, model=checked.model)
-            return _normalize_response(raw, checked)
+            return _normalize_response(
+                raw,
+                checked,
+                optional_choice_questions=optional_choice_questions,
+            )
         except ClientError:
             raise
         except LimitsError as error:

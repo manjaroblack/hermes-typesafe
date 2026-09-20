@@ -21,12 +21,12 @@ from typing import Any
 
 if __package__:
     from ._build_identity import ABI as NATIVE_BROKER_ABI, BUILD_SHA256 as NATIVE_BUILD_SHA256
-    from .client import AsyncTypeSafeClient, ClientError
+    from .client import AsyncTypeSafeClient, ClientError, _validated_optional_choice_questions
     from .limits import LimitsError, ValidatedRequest, preflight_request
     from .questions import HOOK_TIMEOUT_SECONDS, TOOL_TIMEOUT_SECONDS, USEFUL_TOOL_SECONDS
 else:  # pragma: no cover - flat plugin smoke import
     from _build_identity import ABI as NATIVE_BROKER_ABI, BUILD_SHA256 as NATIVE_BUILD_SHA256
-    from client import AsyncTypeSafeClient, ClientError
+    from client import AsyncTypeSafeClient, ClientError, _validated_optional_choice_questions
     from limits import LimitsError, ValidatedRequest, preflight_request
     from questions import HOOK_TIMEOUT_SECONDS, TOOL_TIMEOUT_SECONDS, USEFUL_TOOL_SECONDS
 
@@ -299,7 +299,14 @@ class TypeSafeRuntime:
         except LimitsError as error:
             raise ClientError("payload_too_large" if error.code == "payload_too_large" else "invalid_input") from None
 
-    def _submit(self, checked: ValidatedRequest, *, api_key: Any, deadline: float) -> tuple[ModuleType, Any, Any] | None:
+    def _submit(
+        self,
+        checked: ValidatedRequest,
+        *,
+        api_key: Any,
+        deadline: float,
+        optional_choice_questions: tuple[str, ...],
+    ) -> tuple[ModuleType, Any, Any] | None:
         loaded = self._lease_for_operation()
         if loaded is None:
             return None
@@ -313,6 +320,12 @@ class TypeSafeRuntime:
             client_timeout = max(0.001, min(deadline - time.monotonic(), USEFUL_TOOL_SECONDS))
             client = client_factory(api_key=api_key, model=model, timeout=client_timeout)
             try:
+                if optional_choice_questions:
+                    return await client.system_one(
+                        state,
+                        questions,
+                        optional_choice_questions=optional_choice_questions,
+                    )
                 return await client.system_one(state, questions)
             except ClientError as error:
                 return _SafeFailure(error.code)  # type: ignore[return-value]
@@ -328,6 +341,7 @@ class TypeSafeRuntime:
         model: str,
         api_key: str | None,
         timeout: float = TOOL_TIMEOUT_SECONDS,
+        optional_choice_questions: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         started = time.monotonic()
         if not _valid_api_key(api_key):
@@ -336,11 +350,19 @@ class TypeSafeRuntime:
         if requested_timeout is None:
             raise ClientError("invalid_input")
         checked = self._validated(state, questions, model)
+        optional_choice_questions = _validated_optional_choice_questions(
+            checked.questions, optional_choice_questions
+        )
         remaining = requested_timeout - (time.monotonic() - started)
         if remaining <= 0:
             raise ClientError("timeout")
         deadline = started + requested_timeout
-        submitted = self._submit(checked, api_key=api_key, deadline=deadline)
+        submitted = self._submit(
+            checked,
+            api_key=api_key,
+            deadline=deadline,
+            optional_choice_questions=optional_choice_questions,
+        )
         if submitted is None or submitted[1] is None:
             raise ClientError("timeout" if time.monotonic() >= deadline else "unavailable")
         _, operation, _ = submitted
@@ -371,6 +393,7 @@ class TypeSafeRuntime:
         model: str,
         api_key: str | None,
         timeout: float = TOOL_TIMEOUT_SECONDS,
+        optional_choice_questions: tuple[str, ...] = (),
     ) -> dict[str, Any]:
         started = time.monotonic()
         if not _valid_api_key(api_key):
@@ -379,11 +402,19 @@ class TypeSafeRuntime:
         if requested_timeout is None:
             raise ClientError("invalid_input")
         checked = self._validated(state, questions, model)
+        optional_choice_questions = _validated_optional_choice_questions(
+            checked.questions, optional_choice_questions
+        )
         remaining = requested_timeout - (time.monotonic() - started)
         if remaining <= 0:
             raise ClientError("timeout")
         deadline = started + requested_timeout
-        submitted = self._submit(checked, api_key=api_key, deadline=deadline)
+        submitted = self._submit(
+            checked,
+            api_key=api_key,
+            deadline=deadline,
+            optional_choice_questions=optional_choice_questions,
+        )
         if submitted is None or submitted[1] is None:
             raise ClientError("timeout" if time.monotonic() >= deadline else "unavailable")
         _, operation, _ = submitted

@@ -20,17 +20,18 @@ try:
         DEFAULT_MODEL,
         ROUTING_CHOICE,
         ROUTING_DIFFICULTY,
+        ROUTING_EFFORT,
         ROUTING_DIFFICULTY_LEVELS,
         ROUTING_ACTIVE_MODES,
         ROUTING_HIGH,
         ROUTING_MISMATCH,
         ROUTING_MODES,
-        ROUTING_POOL_MAX,
         ROUTING_POOL_NAMES,
         ROUTING_WORTH,
         USEFUL_HOOK_SECONDS,
         routing_questions,
     )
+    from .pool import normalize_routing_pool, reasoning_effort_union
     from .runtime import HOOK_TIMEOUT_SECONDS, TypeSafeRuntime
     from .tool_system_one import _home_matches, _read_scoped_secret, _valid_scoped_secret
 except ImportError:  # pragma: no cover - flat plugin import
@@ -39,22 +40,22 @@ except ImportError:  # pragma: no cover - flat plugin import
         DEFAULT_MODEL,
         ROUTING_CHOICE,
         ROUTING_DIFFICULTY,
+        ROUTING_EFFORT,
         ROUTING_DIFFICULTY_LEVELS,
         ROUTING_ACTIVE_MODES,
         ROUTING_HIGH,
         ROUTING_MISMATCH,
         ROUTING_MODES,
-        ROUTING_POOL_MAX,
         ROUTING_POOL_NAMES,
         ROUTING_WORTH,
         USEFUL_HOOK_SECONDS,
         routing_questions,
     )
+    from pool import normalize_routing_pool, reasoning_effort_union
     from runtime import HOOK_TIMEOUT_SECONDS, TypeSafeRuntime
     from tool_system_one import _home_matches, _read_scoped_secret, _valid_scoped_secret
 
 LOGGER = logging.getLogger(__name__)
-MAX_ROUTING_POOL = ROUTING_POOL_MAX
 
 
 @dataclass(frozen=True, slots=True)
@@ -69,6 +70,7 @@ class RoutingDecision:
     confidence: float | None
     difficulty: float
     switch_worthy: bool
+    reasoning_effort: str | None = None
 
 
 def _finite_probability(value: Any) -> float | None:
@@ -94,24 +96,11 @@ def _bounded_identifier(value: Any, *, allow_empty: bool = False) -> str | None:
     return value
 
 
-def _validated_pool(models: Any) -> dict[str, dict[str, str]] | None:
-    if type(models) is not dict or len(models) == 0 or len(models) > MAX_ROUTING_POOL:
+def _validated_pool(models: Any) -> dict[str, dict[str, Any]] | None:
+    pool = normalize_routing_pool(models)
+    if pool is None:
         return None
-    cleaned: dict[str, dict[str, str]] = {}
-    for name, entry in models.items():
-        if type(name) is not str or name not in ROUTING_POOL_NAMES:
-            return None
-        if type(entry) is not dict or set(entry) != {"model", "provider"}:
-            return None
-        model = _bounded_identifier(entry.get("model"))
-        provider = _bounded_identifier(entry.get("provider"))
-        if model is None or provider is None:
-            return None
-        cleaned[name] = {"model": model, "provider": provider}
-    identities = {(entry["model"], entry["provider"]) for entry in cleaned.values()}
-    if len(identities) != len(cleaned):
-        return None
-    return cleaned
+    return pool
 
 
 def _answers(response: Any) -> dict[str, Any] | None:
@@ -138,18 +127,18 @@ def _valid_user_message(value: Any) -> bool:
     return len(encoded) <= MAX_STRING_BYTES
 
 
-def _unique_models(pool: Mapping[str, Mapping[str, str]]) -> bool:
+def _unique_models(pool: Mapping[str, Mapping[str, Any]]) -> bool:
     model_names = [entry["model"] for entry in pool.values()]
     return len(model_names) == len(set(model_names))
 
 
-def _unique_identities(pool: Mapping[str, Mapping[str, str]]) -> bool:
+def _unique_identities(pool: Mapping[str, Mapping[str, Any]]) -> bool:
     identities = {(entry["model"], entry["provider"]) for entry in pool.values()}
     return len(identities) == len(pool)
 
 
 def _current_identity_is_unambiguous(
-    pool: Mapping[str, Mapping[str, str]], current_model: Any, current_provider: Any = None
+    pool: Mapping[str, Mapping[str, Any]], current_model: Any, current_provider: Any = None
 ) -> bool:
     current = _bounded_identifier(current_model)
     provider = None if current_provider is None else _bounded_identifier(current_provider)
@@ -172,7 +161,7 @@ def build_routing_questions(models: Any) -> dict[str, dict[str, Any]]:
     pool = _validated_pool(models)
     if pool is None:
         raise ValueError("routing model pool is invalid")
-    return routing_questions(tuple(pool))
+    return routing_questions(tuple(pool), effort_options=reasoning_effort_union(pool))
 
 
 def evaluate_routing(
@@ -182,6 +171,7 @@ def evaluate_routing(
     current_model: Any,
     current_provider: Any = None,
     mode: Any = "cache_break_if_worth_it",
+    is_first_turn: Any | None = None,
 ) -> RoutingDecision | None:
     """Validate one response and apply the selected routing mode's switch gates."""
 
@@ -189,8 +179,12 @@ def evaluate_routing(
     if pool is None or mode not in ROUTING_ACTIVE_MODES:
         return None
     answers = _answers(response)
+    effort_options = reasoning_effort_union(pool)
     expected = {ROUTING_CHOICE, ROUTING_MISMATCH, ROUTING_WORTH, ROUTING_DIFFICULTY}
-    if answers is None or set(answers) != expected:
+    if answers is None or not expected <= set(answers):
+        return None
+    optional_names = set(answers) - expected
+    if optional_names and (not effort_options or optional_names != {ROUTING_EFFORT}):
         return None
 
     choice = _typed_answer(answers, ROUTING_CHOICE, "choice")
@@ -236,24 +230,42 @@ def evaluate_routing(
 
     target_model = pool[target_name]["model"]
     target_provider = pool[target_name]["provider"]
+    reasoning_effort = None
+    if effort_options:
+        selected = pool[target_name]
+        allowed = selected.get("reasoning_allowed", [])
+        effort_answer = _typed_answer(answers, ROUTING_EFFORT, "choice")
+        candidate = effort_answer.get("choice") if effort_answer is not None else None
+        if type(candidate) is str and candidate in effort_options and candidate in allowed:
+            reasoning_effort = candidate
+        else:
+            default = selected.get("reasoning_default")
+            if type(default) is str and default in allowed:
+                reasoning_effort = default
     current = _bounded_identifier(current_model)
     current_provider_value = None if current_provider is None else _bounded_identifier(current_provider)
     same_target = target_model == current and (
         current_provider is None or target_provider == current_provider_value
     )
+    first_turn = mode == "first_turn" if is_first_turn is None else is_first_turn
+    if type(first_turn) is not bool:
+        return None
+    eligible = first_turn is True or (mode == "cache_break_if_worth_it" and first_turn is False)
     switch_worthy = (
-        mismatch >= ROUTING_HIGH
-        and (mode == "first_turn" or worth >= ROUTING_HIGH)
+        eligible
+        and mismatch >= ROUTING_HIGH
+        and (first_turn or worth >= ROUTING_HIGH)
         and confidence is not None
         and confidence >= ROUTING_HIGH
         and current is not None
         and _current_identity_is_unambiguous(pool, current, current_provider)
-        and not same_target
+        and (not same_target or reasoning_effort is not None)
     )
     return RoutingDecision(
         target_name=target_name,
         target_model=target_model,
         target_provider=target_provider,
+        reasoning_effort=reasoning_effort,
         mismatch=mismatch,
         worth_breaking_cache=worth,
         confidence=confidence,
@@ -278,16 +290,17 @@ def format_model_switch_directive(decision: RoutingDecision, *, allow_cache_brea
 
     if not decision.switch_worthy or type(allow_cache_break) is not bool:
         raise ValueError("routing decision is not switch-worthy")
-    return {
-        "model_switch": {
-            "model": decision.target_model,
-            "provider": decision.target_provider,
-            "allow_cache_break": allow_cache_break,
-        }
+    directive = {
+        "model": decision.target_model,
+        "provider": decision.target_provider,
+        "allow_cache_break": allow_cache_break,
     }
+    if decision.reasoning_effort is not None:
+        directive["reasoning_effort"] = decision.reasoning_effort
+    return {"model_switch": directive}
 
 
-def _current_label(pool: Mapping[str, Mapping[str, str]], current_model: Any, current_provider: Any) -> str | None:
+def _current_label(pool: Mapping[str, Mapping[str, Any]], current_model: Any, current_provider: Any) -> str | None:
     if not _current_identity_is_unambiguous(pool, current_model, current_provider):
         return None
     model = _bounded_identifier(current_model)
@@ -340,9 +353,9 @@ def make_routing_directive_handler(
             or mode not in ROUTING_ACTIVE_MODES
         ):
             return None
-        if mode == "first_turn" and is_first_turn is not True:
+        if type(is_first_turn) is not bool:
             return None
-        if mode == "cache_break_if_worth_it" and is_first_turn is not False:
+        if not (is_first_turn is True or (mode == "cache_break_if_worth_it" and is_first_turn is False)):
             return None
         current_label = _current_label(pool, model, provider)
         if current_label is None or type(provider) is not str or not provider or not _valid_user_message(user_message):
@@ -359,25 +372,30 @@ def make_routing_directive_handler(
         if remaining <= 0:
             return None
         try:
-            result = active_runtime.execute_sync(
-                state={"user_message": user_message, "current_label": current_label},
-                questions=build_routing_questions(pool),
-                model=selected_model,
-                api_key=key,
-                timeout=min(remaining, HOOK_TIMEOUT_SECONDS),
-            )
+            questions = build_routing_questions(pool)
+            runtime_kwargs: dict[str, Any] = {
+                "state": {"user_message": user_message, "current_label": current_label},
+                "questions": questions,
+                "model": selected_model,
+                "api_key": key,
+                "timeout": min(remaining, HOOK_TIMEOUT_SECONDS),
+            }
+            if ROUTING_EFFORT in questions:
+                runtime_kwargs["optional_choice_questions"] = (ROUTING_EFFORT,)
+            result = active_runtime.execute_sync(**runtime_kwargs)
             decision = evaluate_routing(
                 result,
                 pool,
                 current_model=model,
                 current_provider=provider,
                 mode=mode,
+                is_first_turn=is_first_turn,
             )
         except Exception:
             return None
         if decision is None or not decision.switch_worthy:
             return None
-        allow_cache_break = mode == "cache_break_if_worth_it"
+        allow_cache_break = is_first_turn is False
         return format_model_switch_directive(decision, allow_cache_break=allow_cache_break)
 
     handler._typesafe_runtime = active_runtime  # type: ignore[attr-defined]
@@ -399,11 +417,9 @@ def compose_advisory_context(suggestion_context: Any, routing_hint: Any) -> str 
 def _eligible(mode: Any, enabled: Any, is_first_turn: Any) -> bool:
     if enabled is not True or type(mode) is not str or mode not in ROUTING_MODES:
         return False
-    if mode == "off":
+    if mode == "off" or type(is_first_turn) is not bool:
         return False
-    if mode == "first_turn":
-        return is_first_turn is True
-    return True
+    return is_first_turn is True or (mode == "cache_break_if_worth_it" and is_first_turn is False)
 
 
 def make_routing_handler(
@@ -456,18 +472,22 @@ def make_routing_handler(
             return None
         try:
             questions = build_routing_questions(pool)
-            result = active_runtime.execute_sync(
-                state=user_message,
-                questions=questions,
-                model=selected_model,
-                api_key=key,
-                timeout=remaining,
-            )
+            runtime_kwargs: dict[str, Any] = {
+                "state": user_message,
+                "questions": questions,
+                "model": selected_model,
+                "api_key": key,
+                "timeout": remaining,
+            }
+            if ROUTING_EFFORT in questions:
+                runtime_kwargs["optional_choice_questions"] = (ROUTING_EFFORT,)
+            result = active_runtime.execute_sync(**runtime_kwargs)
             decision = evaluate_routing(
                 result,
                 pool,
                 current_model=current_model,
                 mode=mode,
+                is_first_turn=is_first_turn,
             )
         except Exception:
             return None
@@ -489,6 +509,7 @@ format_hint = format_routing_hint
 __all__ = [
     "ROUTING_CHOICE",
     "ROUTING_DIFFICULTY",
+    "ROUTING_EFFORT",
     "ROUTING_MISMATCH",
     "ROUTING_POOL_NAMES",
     "ROUTING_WORTH",

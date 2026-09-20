@@ -11,7 +11,7 @@ Unsupported hosts remain inert; keyless/default CI never claims provider success
 | AC04 | Snapshot ranking uses only the current user and immutable current generation; first criteria omit excerpts, rerank uses bounded excerpts, stale/oversized/malformed input fails open. | `tests/test_suggest.py`, `tests/test_harness_callbacks.py`, `tests/test_skills_adapter.py` |
 | AC05 | Tool guard sends exact `{tool_name,args}` only; own-tool and sensitive-key paths never upload; low passes, medium returns native approval, high/unavailable blocks. | `tests/test_guard.py`, `tests/test_harness_callbacks.py`, `tests/test_reviewed_harness_integration.py` |
 | AC06 | Final screen uses final-specific rubrics and bounded `response_text` only; high replaces, medium warns, low preserves, unavailable prefixes the original, and the host's first nonempty transform wins without streaming retraction. | `tests/test_guard.py`, `tests/test_harness_callbacks.py`, `tests/test_reviewed_harness_integration.py` |
-| AC07 | Routing resolves local `{model,provider}` identities and returns a host-applied model-switch directive only after mode-specific closed-pool gates; first-turn routing does not require cache-break worth, while later routing does. | `tests/test_route.py`, `tests/test_harness_callbacks.py`, `tests/test_reviewed_harness_integration.py` |
+| AC07 | Routing resolves local `{model,provider}` identities plus closed per-label reasoning effort; one routing batch uses the deterministic union, invalid effort falls back to the selected default, disabled labels omit effort, and same-identity effort changes remain host-applied. Mode-specific gates still apply: first-turn routing does not require cache-break worth, while later routing does. | `tests/test_reasoning_effort.py`, `tests/test_route.py`, `tests/test_harness_callbacks.py`, `tests/test_reviewed_harness_integration.py` |
 | AC08 | Bundled skill documents seven explicit recipes with canonical offline schemas/examples: intent-before-expensive-tools, rerank, citation check, spawn-or-not, cron-worth-it, kanban class, memory-worthiness. | `questions.py`, `skills/typesafe-system-one/SKILL.md`, `tests/test_recipe_contract.py` |
 | AC09 | `questions.py` is the production policy home for questions, rubrics, thresholds, deadlines, and harness limits; feature modules import those values. | `tests/test_registration.py`, `tests/test_limits.py` |
 | AC10 | Wheel/sdist include the plugin, harness, bundled skill, and canonical broker assets; no Hermes core files are changed. | `tests/test_packaging.py`, `uv build --wheel --sdist`, Git diff |
@@ -27,7 +27,7 @@ uv build --wheel --sdist
 ```
 
 The committed isolated core proof pins exact approved fork head
-`b38c2858107e9d63f98c1d3a86bd00933fbd0661`. It uses the real PluginManager,
+`db69f924fd2b899ba2e34804633ea16c851d3ebb`. It uses the real PluginManager,
 tool dispatch/approval boundary, and finalizer to verify all three hooks,
 decision-phase binding, mode-specific routing, fail-closed tool outcomes, and
 first-nonempty transform precedence. The older public fixture remains the

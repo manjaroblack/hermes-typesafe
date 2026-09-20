@@ -94,12 +94,15 @@ ROUTING_ACTIVE_MODES = frozenset({"first_turn", "cache_break_if_worth_it"})
 ROUTING_POOL_NAMES = frozenset({"cheap", "coding", "reasoning", "long-context"})
 ROUTING_POOL_MAX = 4
 ROUTING_CHOICE = "target_model"
+ROUTING_EFFORT = "reasoning_effort"
 ROUTING_MISMATCH = "current_model_mismatch"
 ROUTING_WORTH = "worth_breaking_cache"
 ROUTING_DIFFICULTY = "difficulty"
 ROUTING_DIFFICULTY_LEVELS = ("routine", "moderate", "difficult", "expert")
+ROUTING_EFFORT_LEVELS = ("low", "medium", "high")
 
 ROUTING_CHOICE_INSTRUCTIONS = "Which configured model label best fits the current request?"
+ROUTING_EFFORT_INSTRUCTIONS = "Which reasoning effort best fits the selected model label?"
 ROUTING_MISMATCH_INSTRUCTIONS = "How strongly does the current model mismatch this request?"
 ROUTING_WORTH_INSTRUCTIONS = "How worthwhile would breaking the current model cache be for this request?"
 ROUTING_DIFFICULTY_INSTRUCTIONS = "How difficult is the current request?"
@@ -327,12 +330,14 @@ def default_settings() -> dict[str, Any]:
     return deepcopy(DEFAULT_SETTINGS)
 
 
-def routing_questions(target_names: tuple[str, ...]) -> dict[str, dict[str, Any]]:
+def routing_questions(
+    target_names: tuple[str, ...], *, effort_options: tuple[str, ...] = ()
+) -> dict[str, dict[str, Any]]:
     """Build the single advisory routing batch from local pool labels."""
 
     if not target_names or len(target_names) > 4 or len(set(target_names)) != len(target_names):
         raise ValueError("routing target labels are invalid")
-    return {
+    questions = {
         ROUTING_CHOICE: {
             "type": "choice",
             "instructions": ROUTING_CHOICE_INSTRUCTIONS,
@@ -352,6 +357,19 @@ def routing_questions(target_names: tuple[str, ...]) -> dict[str, dict[str, Any]
             "criteria": list(ROUTING_DIFFICULTY_LEVELS),
         },
     }
+    if type(effort_options) is not tuple or len(effort_options) > 4:
+        raise ValueError("routing effort options are invalid")
+    if any(type(option) is not str or option not in ROUTING_EFFORT_LEVELS for option in effort_options):
+        raise ValueError("routing effort options are invalid")
+    if len(effort_options) != len(set(effort_options)):
+        raise ValueError("routing effort options are invalid")
+    if effort_options:
+        questions[ROUTING_EFFORT] = {
+            "type": "choice",
+            "instructions": ROUTING_EFFORT_INSTRUCTIONS,
+            "criteria": {option: None for option in effort_options},
+        }
+    return questions
 
 
 def resolve_guard_thresholds(
