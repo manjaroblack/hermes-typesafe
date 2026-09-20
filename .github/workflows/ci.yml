@@ -33,6 +33,16 @@ jobs:
           git -C /tmp/hermes-typesafe-public-fixture fetch --depth 1 origin "$HERMES_FIXTURE_SHA"
           git -C /tmp/hermes-typesafe-public-fixture checkout --detach FETCH_HEAD
           test "$(git -C /tmp/hermes-typesafe-public-fixture rev-parse HEAD)" = "$HERMES_FIXTURE_SHA"
+      - name: Fetch immutable reviewed Hermes integration fixture
+        if: matrix.python-version == '3.12'
+        env:
+          HERMES_REVIEWED_FIXTURE_SHA: b38c2858107e9d63f98c1d3a86bd00933fbd0661
+        run: |
+          git init /tmp/hermes-typesafe-reviewed-fixture
+          git -C /tmp/hermes-typesafe-reviewed-fixture remote add origin https://github.com/manjaroblack/hermes-agent.git
+          git -C /tmp/hermes-typesafe-reviewed-fixture fetch --depth 1 origin "$HERMES_REVIEWED_FIXTURE_SHA"
+          git -C /tmp/hermes-typesafe-reviewed-fixture checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/hermes-typesafe-reviewed-fixture rev-parse HEAD)" = "$HERMES_REVIEWED_FIXTURE_SHA"
       - name: Install locked project dependencies
         run: python -m pip install --disable-pip-version-check "uv==0.10.10"
       - name: Sync locked environment
@@ -41,6 +51,19 @@ jobs:
         run: uv run --no-sync python -m build --wheel --outdir /tmp/typesafe-candidate
       - name: Install candidate wheel
         run: uv pip install --python .venv/bin/python --force-reinstall /tmp/typesafe-candidate/hermes_typesafe-*.whl
+      - name: Run reviewed-fork composed harness lane
+        if: matrix.python-version == '3.12'
+        env:
+          TYPESAFE_API_KEY: ""
+          HERMES_KANBAN_DB: ""
+          HERMES_KANBAN_BOARD: ""
+          HERMES_KANBAN_TASK: ""
+          HERMES_KANBAN_WORKSPACE: ""
+          HERMES_KANBAN_WORKSPACES_ROOT: ""
+          HERMES_TYPESAFE_REVIEWED_FIXTURE: /tmp/hermes-typesafe-reviewed-fixture
+          HERMES_TYPESAFE_REQUIRE_REVIEWED_FIXTURE: "true"
+          HERMES_TYPESAFE_REQUIRE_WHEEL: "true"
+        run: uv run --no-sync pytest -q tests/test_reviewed_harness_integration.py
       - name: Run installed-wheel two-home lane
         if: matrix.python-version == '3.12'
         env:
@@ -64,6 +87,9 @@ jobs:
           HERMES_KANBAN_WORKSPACES_ROOT: ""
           HERMES_TYPESAFE_HERMES_FIXTURE: /tmp/hermes-typesafe-public-fixture
           HERMES_TYPESAFE_REQUIRE_FIXTURE: ${{ matrix.python-version == '3.12' }}
+          HERMES_TYPESAFE_REVIEWED_FIXTURE: /tmp/hermes-typesafe-reviewed-fixture
+          HERMES_TYPESAFE_REQUIRE_REVIEWED_FIXTURE: ${{ matrix.python-version == '3.12' }}
+          HERMES_TYPESAFE_REQUIRE_WHEEL: ${{ matrix.python-version == '3.12' }}
         run: uv run --no-sync pytest -q
       - name: Build wheel and sdist
         run: uv run python -m build --wheel --sdist

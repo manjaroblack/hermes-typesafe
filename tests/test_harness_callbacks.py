@@ -12,6 +12,7 @@ try:
         make_final_guard_handler,
         make_pre_tool_guard_handler,
     )
+    from limits import MAX_STRING_BYTES
     from questions import HARNESS_CAPABILITIES
     from skills_adapter import host_snapshot_to_verified
 except ModuleNotFoundError:
@@ -21,6 +22,7 @@ except ModuleNotFoundError:
         make_final_guard_handler,
         make_pre_tool_guard_handler,
     )
+    from hermes_typesafe.limits import MAX_STRING_BYTES
     from hermes_typesafe.questions import HARNESS_CAPABILITIES
     from hermes_typesafe.skills_adapter import host_snapshot_to_verified
 
@@ -31,12 +33,12 @@ POOL = {
 }
 
 
-def route_result() -> dict[str, Any]:
+def route_result(*, worth: float = 0.9) -> dict[str, Any]:
     return {
         "answers": {
             "target_model": {"type": "choice", "choice": "coding", "confidence": 0.9},
             "current_model_mismatch": {"type": "noul", "noul": 0.9},
-            "worth_breaking_cache": {"type": "noul", "noul": 0.9},
+            "worth_breaking_cache": {"type": "noul", "noul": worth},
             "difficulty": {
                 "type": "score",
                 "score": 2.0,
@@ -146,6 +148,33 @@ def test_combined_pre_llm_callback_is_bounded_and_returns_host_directive_and_con
     assert "history" not in runtime.calls[0]["state"]
 
 
+def test_first_turn_route_does_not_require_cache_break_worth() -> None:
+    runtime = FakeRuntime(route_result(worth=0.1))
+    handler = make_combined_pre_llm_handler(
+        enabled_settings(**{"suggestion.enabled": False}),
+        runtime=runtime,
+        snapshot_reader=host_snapshot,
+        secret_reader=lambda: "scoped-key",
+        require_home_identity=False,
+    )
+
+    result = handler(
+        user_message="Route this request",
+        is_first_turn=True,
+        model="jev-cheap",
+        provider="typesafe",
+    )
+
+    assert result == {
+        "model_switch": {
+            "model": "jev-coding",
+            "provider": "typesafe",
+            "allow_cache_break": False,
+        }
+    }
+    assert len(runtime.calls) == 1
+
+
 def test_generation_change_between_rank_and_rerank_discards_context() -> None:
     runtime = FakeRuntime(rank_result(), rerank_result())
     snapshots = iter((host_snapshot("g-1"), host_snapshot("g-2")))
@@ -209,6 +238,20 @@ def test_guard_failure_blocks_and_final_failure_marks_original_unavailable() -> 
         require_home_identity=False,
     )
     assert final("original response") == "Safety screen unavailable; response not verified.\noriginal response"
+
+
+def test_oversized_final_is_rejected_locally_without_runtime_upload() -> None:
+    runtime = FakeRuntime({})
+    final = make_final_guard_handler(
+        enabled_settings(),
+        runtime=runtime,
+        secret_reader=lambda: "scoped-key",
+        require_home_identity=False,
+    )
+    original = "x" * (MAX_STRING_BYTES + 1)
+
+    assert final(original) == f"Safety screen unavailable; response not verified.\n{original}"
+    assert runtime.calls == []
 
 
 def test_host_snapshot_conversion_rejects_non_tuple_entries_and_preserves_capability_markers() -> None:

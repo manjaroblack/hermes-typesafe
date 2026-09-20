@@ -181,11 +181,12 @@ def evaluate_routing(
     *,
     current_model: Any,
     current_provider: Any = None,
+    mode: Any = "cache_break_if_worth_it",
 ) -> RoutingDecision | None:
-    """Validate one normalized response and compute advisory switch-worthiness."""
+    """Validate one response and apply the selected routing mode's switch gates."""
 
     pool = _validated_pool(models)
-    if pool is None:
+    if pool is None or mode not in ROUTING_ACTIVE_MODES:
         return None
     answers = _answers(response)
     expected = {ROUTING_CHOICE, ROUTING_MISMATCH, ROUTING_WORTH, ROUTING_DIFFICULTY}
@@ -242,7 +243,7 @@ def evaluate_routing(
     )
     switch_worthy = (
         mismatch >= ROUTING_HIGH
-        and worth >= ROUTING_HIGH
+        and (mode == "first_turn" or worth >= ROUTING_HIGH)
         and confidence is not None
         and confidence >= ROUTING_HIGH
         and current is not None
@@ -323,7 +324,7 @@ def make_routing_directive_handler(
         require_home_identity=require_home_identity,
     )
     read_secret = secret_reader or _read_scoped_secret
-    active_logger = logger or LOGGER
+    del logger
 
     def handler(
         user_message: Any,
@@ -370,14 +371,13 @@ def make_routing_directive_handler(
                 pool,
                 current_model=model,
                 current_provider=provider,
+                mode=mode,
             )
         except Exception:
             return None
         if decision is None or not decision.switch_worthy:
             return None
         allow_cache_break = mode == "cache_break_if_worth_it"
-        if allow_cache_break:
-            active_logger.info("would have switched to configured model label %s", decision.target_name)
         return format_model_switch_directive(decision, allow_cache_break=allow_cache_break)
 
     handler._typesafe_runtime = active_runtime  # type: ignore[attr-defined]
@@ -431,7 +431,7 @@ def make_routing_handler(
         require_home_identity=require_home_identity,
     )
     read_secret = secret_reader or _read_scoped_secret
-    active_logger = logger or LOGGER
+    del logger
 
     def handler(**kwargs: Any) -> str | None:
         deadline = clock() + HOOK_TIMEOUT_SECONDS
@@ -463,13 +463,16 @@ def make_routing_handler(
                 api_key=key,
                 timeout=remaining,
             )
-            decision = evaluate_routing(result, pool, current_model=current_model)
+            decision = evaluate_routing(
+                result,
+                pool,
+                current_model=current_model,
+                mode=mode,
+            )
         except Exception:
             return None
         if decision is None or not decision.switch_worthy:
             return None
-        if mode == "cache_break_if_worth_it":
-            active_logger.info("would have switched to configured model label %s", decision.target_name)
         return format_routing_hint(decision.target_name)
 
     handler._typesafe_runtime = active_runtime  # type: ignore[attr-defined]

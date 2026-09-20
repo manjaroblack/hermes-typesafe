@@ -293,7 +293,7 @@ def make_rule_key(
 
 
 def _normalise_results(results: Any) -> tuple[list[tuple[str, float]] | None, bool]:
-    """Read only known answer fields and validate every known supplied score."""
+    """Require exactly one valid score for every configured guard check."""
 
     if type(results) is not dict:
         return None, False
@@ -302,12 +302,12 @@ def _normalise_results(results: Any) -> tuple[list[tuple[str, float]] | None, bo
         raw_answers = results["answers"]
     if type(raw_answers) is not dict:
         return None, False
+    if set(raw_answers) != set(GUARD_CHECKS):
+        return None, False
 
     values: list[tuple[str, float]] = []
     invalid = False
     for check in GUARD_CHECKS:
-        if check not in raw_answers:
-            continue
         raw = raw_answers[check]
         if type(raw) is dict:
             if raw.get("type") != "noul" or "noul" not in raw:

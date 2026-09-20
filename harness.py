@@ -15,16 +15,19 @@ try:
         evaluate_tool_arguments,
         represent_final_text,
     )
+    from .limits import LimitsError, _validate_and_encode
     from .questions import (
         DEFAULT_MODEL,
         FINAL_GUARD_QUESTIONS,
         GUARD_STATIC_SENSITIVE_BLOCK,
         GUARD_STATIC_TOOL_BLOCK,
+        GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX,
         HARNESS_CAPABILITIES,
         HOOK_TIMEOUT_SECONDS,
         MAX_FINAL_RPC,
         MAX_GUARD_RPC,
         MAX_PRE_LLM_RPC,
+        MAX_STATE_BYTES,
         ROUTING_ACTIVE_MODES,
         SUGGESTION_MISS_CONTEXT,
         USEFUL_HOOK_SECONDS,
@@ -47,16 +50,19 @@ try:
     from .tool_system_one import _home_matches, _read_scoped_secret, _valid_scoped_secret
 except ImportError:  # pragma: no cover - flat plugin import
     from guard import GuardInputError, build_tool_guard_request, evaluate_tool_arguments, represent_final_text
+    from limits import LimitsError, _validate_and_encode
     from questions import (
         DEFAULT_MODEL,
         FINAL_GUARD_QUESTIONS,
         GUARD_STATIC_SENSITIVE_BLOCK,
         GUARD_STATIC_TOOL_BLOCK,
+        GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX,
         HARNESS_CAPABILITIES,
         HOOK_TIMEOUT_SECONDS,
         MAX_FINAL_RPC,
         MAX_GUARD_RPC,
         MAX_PRE_LLM_RPC,
+        MAX_STATE_BYTES,
         ROUTING_ACTIVE_MODES,
         SUGGESTION_MISS_CONTEXT,
         USEFUL_HOOK_SECONDS,
@@ -86,9 +92,10 @@ def supports_reviewed_harness(ctx: Any) -> bool:
     except (TypeError, ValueError):
         return False
     phase = parameters.get("phase")
-    return phase is not None or any(
-        parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
-    )
+    return phase is not None and phase.kind in {
+        inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        inspect.Parameter.KEYWORD_ONLY,
+    }
 
 
 def register_hook_checked(ctx: Any, name: str, callback: Callable, *, phase: str = "normal") -> bool:
@@ -202,6 +209,7 @@ def make_combined_pre_llm_handler(
                         route_pool,
                         current_model=model,
                         current_provider=provider,
+                        mode=mode,
                     )
                     if decision is not None and decision.switch_worthy:
                         output.update(
@@ -386,9 +394,23 @@ def make_final_guard_handler(
     read_secret = secret_reader or _read_scoped_secret
     harness_model = _harness_model(detached)
 
+    def unavailable(response_text: Any) -> str:
+        if type(response_text) is not str:
+            return GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX
+        return f"{GUARD_STATIC_UNAVAILABLE_FINAL_PREFIX}\n{response_text}"
+
     def handler(response_text: Any) -> str:
         if detached.get("guardrails.enabled") is not True:
             return response_text if type(response_text) is str else ""
+        try:
+            _validate_and_encode(
+                response_text,
+                cap=MAX_STATE_BYTES,
+                code="payload_too_large",
+                root_kind="state",
+            )
+        except LimitsError:
+            return unavailable(response_text)
         if not _home_matches(home_identity, required=require_home_identity):
             return represent_final_text(response_text, None).text
         if harness_model is None:

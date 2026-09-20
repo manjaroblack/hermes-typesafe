@@ -8,7 +8,8 @@
 - Design SHA-256: `9b756899689d6d31f31bb7f5d56c80696e75e3cbdd0a37e6d74d735c25020147`
 - Independent security A3: `SECURITY_DESIGN_PASS_FOR_B3_REVIEW`, report SHA-256 `50acd1eb584a01e1554adaa45371838fde70b6f0444dd71aaf996302e32f1c2d`
 - Independent B3: `GO`, `implementation_authorized=true`, ACMD01-06 only, bound to the exact v3 design hash.
-- Public Hermes fixture: `NousResearch/hermes-agent@ee4452991d17534aa561f31ee55596d082aa94e7`; live Hermes was not edited.
+- Negative public Hermes fixture: `NousResearch/hermes-agent@ee4452991d17534aa561f31ee55596d082aa94e7`.
+- Positive reviewed Hermes fixture: `manjaroblack/hermes-agent@b38c2858107e9d63f98c1d3a86bd00933fbd0661`; live Hermes was not edited.
 
 ## Foundation choices
 
@@ -88,6 +89,11 @@ phase-limited status statements with the following cumulative boundary:
   argument keys are blocked before upload, the plugin's own tool is skipped,
   and provider/key/broker/deadline failures block. Final unavailable results
   use a static prefix and never retract streaming output.
+- Completed-output transforms follow the reviewed host's first-nonempty-string
+  precedence: an earlier replacement result wins over TypeSafe, while a
+  TypeSafe result wins over later replacement results. The host may still invoke
+  every callback for observation; no fourth result hook or streaming retraction
+  is introduced.
 
 ## Human gates and rollback
 

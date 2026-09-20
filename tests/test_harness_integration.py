@@ -10,6 +10,11 @@ import pytest
 
 from conftest import ROOT
 
+try:
+    from harness import supports_reviewed_harness
+except ModuleNotFoundError:
+    from hermes_typesafe.harness import supports_reviewed_harness
+
 
 CAPABILITIES = frozenset(
     {
@@ -92,6 +97,19 @@ def test_flags_on_without_complete_fork_capabilities_hold_all_harness_callbacks(
 
     assert context.hooks == []
     assert [entry["name"] for entry in context.tools] == ["system_one"]
+
+
+def test_variadic_kwargs_do_not_substitute_for_explicit_phase_support() -> None:
+    class VariadicContext:
+        capabilities = CAPABILITIES
+
+        def register_hook(self, name: str, callback: Any, **kwargs: Any) -> None:
+            del name, callback, kwargs
+
+        def skills_snapshot(self) -> Any:
+            return None
+
+    assert supports_reviewed_harness(VariadicContext()) is False
 
 
 @pytest.mark.parametrize("enabled", [False])
