@@ -29,6 +29,7 @@ try:
         MAX_PRE_LLM_RPC,
         MAX_STATE_BYTES,
         ROUTING_ACTIVE_MODES,
+        ROUTING_EFFORT,
         SUGGESTION_MISS_CONTEXT,
         USEFUL_HOOK_SECONDS,
     )
@@ -64,6 +65,7 @@ except ImportError:  # pragma: no cover - flat plugin import
         MAX_PRE_LLM_RPC,
         MAX_STATE_BYTES,
         ROUTING_ACTIVE_MODES,
+        ROUTING_EFFORT,
         SUGGESTION_MISS_CONTEXT,
         USEFUL_HOOK_SECONDS,
     )
@@ -130,7 +132,7 @@ def _harness_model(settings: Mapping[str, Any]) -> str | None:
     return DEFAULT_MODEL if value == DEFAULT_MODEL else None
 
 
-def _eligible_routing_pool(settings: Mapping[str, Any]) -> dict[str, dict[str, str]] | None:
+def _eligible_routing_pool(settings: Mapping[str, Any]) -> dict[str, dict[str, Any]] | None:
     """Return a validated pool only when routing is eligible to run."""
 
     if settings.get("routing.enabled") is not True:
@@ -191,8 +193,9 @@ def make_combined_pre_llm_handler(
 
         if route_pool is not None and calls < MAX_PRE_LLM_RPC:
             mode = detached.get("routing.mode")
-            eligible = (mode == "first_turn" and is_first_turn is True) or (
-                mode == "cache_break_if_worth_it" and is_first_turn is False
+            eligible = type(is_first_turn) is bool and (
+                is_first_turn is True
+                or (mode == "cache_break_if_worth_it" and is_first_turn is False)
             )
             current_label = _current_label(route_pool, model, provider)
             remaining = _deadline_remaining(started, clock)
@@ -207,25 +210,30 @@ def make_combined_pre_llm_handler(
             ):
                 try:
                     calls += 1
-                    route_response = active_runtime.execute_sync(
-                        state={"user_message": user_message, "current_label": current_label},
-                        questions=build_routing_questions(route_pool),
-                        model=harness_model,
-                        api_key=key,
-                        timeout=remaining,
-                    )
+                    questions = build_routing_questions(route_pool)
+                    runtime_kwargs: dict[str, Any] = {
+                        "state": {"user_message": user_message, "current_label": current_label},
+                        "questions": questions,
+                        "model": harness_model,
+                        "api_key": key,
+                        "timeout": remaining,
+                    }
+                    if ROUTING_EFFORT in questions:
+                        runtime_kwargs["optional_choice_questions"] = (ROUTING_EFFORT,)
+                    route_response = active_runtime.execute_sync(**runtime_kwargs)
                     decision = evaluate_routing(
                         route_response,
                         route_pool,
                         current_model=model,
                         current_provider=provider,
                         mode=mode,
+                        is_first_turn=is_first_turn,
                     )
                     if decision is not None and decision.switch_worthy:
                         output.update(
                             format_model_switch_directive(
                                 decision,
-                                allow_cache_break=mode == "cache_break_if_worth_it",
+                                allow_cache_break=is_first_turn is False,
                             )
                         )
                 except Exception:

@@ -80,17 +80,28 @@ routing:
     cheap:
       model: jev-cheap
       provider: typesafe
+      reasoning_allowed: []
     coding:
       model: jev-coding
       provider: typesafe
+      reasoning_allowed: [low, medium, high]
+      reasoning_default: medium
 ```
 
 Only `cheap`, `coding`, `reasoning`, and `long-context` labels are accepted,
-with at most four unique `{model, provider}` identities. Routing resolves both
-fields locally; no provider-proposed SKU is accepted. `first_turn` requires the
-actual first-turn boolean and cannot break cache. `cache_break_if_worth_it`
-requires a later turn and only returns `allow_cache_break: true` after
-confidence, mismatch, worth, difficulty, and current-identity gates pass.
+with at most four unique `{model, provider}` identities. Optional reasoning is
+enabled per label only when `reasoning_allowed` is a distinct nonempty list of
+`low`, `medium`, and/or `high` with a member `reasoning_default`; malformed
+optional settings disable effort for that label without disabling model
+routing. The routing batch asks one effort Choice over the deterministic union
+of enabled labels. Invalid or missing effort answers fall back to the selected
+label default; labels without effort settings emit no effort directive. Routing
+resolves both identity fields locally; no provider-proposed SKU is accepted.
+`first_turn` requires the actual first-turn boolean and cannot break cache.
+`cache_break_if_worth_it` permits later turns and only returns
+`allow_cache_break: true` after confidence, mismatch, worth, difficulty, and
+current-identity gates pass. Same-identity effort changes remain host-applied
+cache-break switches.
 
 ## Bounded hook contracts
 

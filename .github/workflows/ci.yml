@@ -36,7 +36,7 @@ jobs:
       - name: Fetch immutable reviewed Hermes integration fixture
         if: matrix.python-version == '3.12'
         env:
-          HERMES_REVIEWED_FIXTURE_SHA: b38c2858107e9d63f98c1d3a86bd00933fbd0661
+          HERMES_REVIEWED_FIXTURE_SHA: db69f924fd2b899ba2e34804633ea16c851d3ebb
         run: |
           git init /tmp/hermes-typesafe-reviewed-fixture
           git -C /tmp/hermes-typesafe-reviewed-fixture remote add origin https://github.com/manjaroblack/hermes-agent.git

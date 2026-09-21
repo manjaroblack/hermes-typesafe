@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-REVIEWED_HERMES_SHA = "b38c2858107e9d63f98c1d3a86bd00933fbd0661"
+REVIEWED_HERMES_SHA = "db69f924fd2b899ba2e34804633ea16c851d3ebb"
 REVIEWED_HERMES_FIXTURE = "/tmp/hermes-typesafe-reviewed-fixture"
 
 
@@ -75,6 +75,8 @@ def sdk_response(state, questions, model):
                 },
             },
         }
+        if "reasoning_effort" in questions:
+            answers["reasoning_effort"] = {"type": "choice", "choice": "medium"}
     elif isinstance(state, dict) and set(state) == {"tool_name", "args"}:
         kind = "guard"
         answers = guard_answers(wire["guard_mode"])
@@ -156,6 +158,8 @@ plugins:
             coding:
               model: model-coding
               provider: provider-a
+              reasoning_allowed: [low, medium, high]
+              reasoning_default: medium
 """.strip()
         + "\n",
         encoding="utf-8",
@@ -251,6 +255,7 @@ with tempfile.TemporaryDirectory(prefix="typesafe-reviewed-harness-") as temp:
                     "model": "model-coding",
                     "provider": "provider-a",
                     "allow_cache_break": False,
+                    "reasoning_effort": "medium",
                 }
             }
         ]
@@ -465,6 +470,7 @@ def test_reviewed_fork_real_plugin_manager_composes_all_harness_paths() -> None:
         "model": "model-coding",
         "provider": "provider-a",
         "allow_cache_break": False,
+        "reasoning_effort": "medium",
     }
     assert payload["actual_tool_dispatches"] == 2
     assert payload["plugin_first_transform"] is True

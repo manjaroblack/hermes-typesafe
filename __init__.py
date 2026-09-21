@@ -14,10 +14,9 @@ if __package__:
     from .questions import (
         DEFAULT_MODEL,
         ROUTING_MODES,
-        ROUTING_POOL_MAX,
-        ROUTING_POOL_NAMES,
         default_settings as _default_settings,
     )
+    from .pool import normalize_routing_pool
     from .runtime import TypeSafeRuntime, runtime_status
     from .harness import (
         _eligible_routing_pool,
@@ -40,10 +39,9 @@ else:  # pragma: no cover - pytest can collect a flat plugin root as ``__init__`
     from questions import (
         DEFAULT_MODEL,
         ROUTING_MODES,
-        ROUTING_POOL_MAX,
-        ROUTING_POOL_NAMES,
         default_settings as _default_settings,
     )
+    from pool import normalize_routing_pool
     from runtime import TypeSafeRuntime, runtime_status
     from harness import (
         _eligible_routing_pool,
@@ -86,32 +84,10 @@ def _bounded_model_setting(value: Any) -> str:
     return stripped
 
 
-def _bounded_routing_models(value: Any) -> dict[str, dict[str, str]]:
-    """Detach the strict four-label routing map or return an inert pool."""
+def _bounded_routing_models(value: Any) -> dict[str, dict[str, Any]]:
+    """Detach the bounded routing map or return an inert pool."""
 
-    if type(value) is not dict or len(value) > ROUTING_POOL_MAX:
-        return {}
-    if not value:
-        return {}
-    cleaned: dict[str, dict[str, str]] = {}
-    for name, entry in value.items():
-        if name not in ROUTING_POOL_NAMES or type(entry) is not dict or set(entry) != {"model", "provider"}:
-            return {}
-        model = entry.get("model")
-        provider = entry.get("provider")
-        if type(model) is not str or type(provider) is not str or not model or not provider:
-            return {}
-        try:
-            model_bytes = model.encode("utf-8", errors="strict")
-            provider_bytes = provider.encode("utf-8", errors="strict")
-        except UnicodeEncodeError:
-            return {}
-        if len(model_bytes) > 128 or len(provider_bytes) > 128:
-            return {}
-        if any(ord(char) < 0x20 or ord(char) == 0x7F for char in model + provider):
-            return {}
-        cleaned[name] = {"model": model, "provider": provider}
-    return cleaned
+    return normalize_routing_pool(value) or {}
 
 
 def _read_settings(ctx: Any) -> dict[str, Any]:

@@ -9,7 +9,7 @@
 - Independent security A3: `SECURITY_DESIGN_PASS_FOR_B3_REVIEW`, report SHA-256 `50acd1eb584a01e1554adaa45371838fde70b6f0444dd71aaf996302e32f1c2d`
 - Independent B3: `GO`, `implementation_authorized=true`, ACMD01-06 only, bound to the exact v3 design hash.
 - Negative public Hermes fixture: `NousResearch/hermes-agent@ee4452991d17534aa561f31ee55596d082aa94e7`.
-- Positive reviewed Hermes fixture: `manjaroblack/hermes-agent@b38c2858107e9d63f98c1d3a86bd00933fbd0661`; live Hermes was not edited.
+- Positive reviewed Hermes fixture: `manjaroblack/hermes-agent@db69f924fd2b899ba2e34804633ea16c851d3ebb`; live Hermes was not edited.
 
 ## Foundation choices
 

@@ -16,7 +16,7 @@ from conftest import ROOT
 
 PUBLIC_HERMES_SHA = "ee4452991d17534aa561f31ee55596d082aa94e7"
 PUBLIC_HERMES_FIXTURE = "/tmp/hermes-typesafe-public-fixture"
-REVIEWED_HERMES_SHA = "b38c2858107e9d63f98c1d3a86bd00933fbd0661"
+REVIEWED_HERMES_SHA = "db69f924fd2b899ba2e34804633ea16c851d3ebb"
 REVIEWED_HERMES_FIXTURE = "/tmp/hermes-typesafe-reviewed-fixture"
 
 
